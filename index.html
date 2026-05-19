@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanslihuset - Beställningsportal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .gradient-bg { background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); }
+        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header id="main-header" class="hidden bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+                <div class="bg-blue-600 p-2 rounded-lg">
+                    <i class="fas fa-landmark text-white"></i>
+                </div>
+                <span class="text-xl font-bold text-gray-800">Kansli<span class="text-blue-600">huset</span></span>
+            </div>
+            <div class="flex items-center space-x-4">
+                <span id="user-info" class="text-sm text-gray-600 font-medium"></span>
+                <button onclick="logout()" class="text-sm bg-red-50 text-red-600 px-3 py-1.5 rounded-md hover:bg-red-100 transition">Logga ut</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- LOGIN SIDA -->
+    <div id="login-page" class="min-h-screen flex items-center justify-center gradient-bg p-4">
+        <div class="glass-card p-8 rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-800">Logga in</h1>
+                <p class="text-gray-500 mt-2">Kanslihuset Plattform</p>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Användarnamn</label>
+                    <input type="text" id="username" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Lösenord</label>
+                    <input type="password" id="password" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition">
+                </div>
+                <button onclick="login()" class="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl hover:bg-blue-700 transition shadow-lg">
+                    Logga in
+                </button>
+            </div>
+            <div class="mt-6 text-xs text-gray-400 text-center">
+                User: user/user (Beställare) <br>
+                User: user2/user2 (Grafikgruppen)
+            </div>
+        </div>
+    </div>
+
+    <!-- HUVUDMENY -->
+    <main id="dashboard" class="hidden max-w-7xl mx-auto px-4 py-12">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="menu-container"></div>
+    </main>
+
+    <!-- SIDA: VÄLJ VÄG (VET ELLER VET INTE AVDELNING) -->
+    <section id="choose-path-page" class="hidden max-w-5xl mx-auto px-4 py-12">
+        <button onclick="showDashboard()" class="mb-6 text-blue-600 hover:underline flex items-center">
+            <i class="fas fa-arrow-left mr-2"></i> Tillbaka till menyn
+        </button>
+        <h2 class="text-3xl font-bold mb-8 text-center text-gray-800">Hur vill du fortsätta?</h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div onclick="showDepartments()" class="bg-white p-10 rounded-2xl shadow border border-gray-200 cursor-pointer transform hover:-translate-y-1 hover:shadow-xl transition flex flex-col items-center text-center group">
+                <div class="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-6 group-hover:bg-blue-600 group-hover:text-white transition">
+                    <i class="fas fa-sitemap text-3xl"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-800 mb-2">Jag vet vilken avdelning jag ska beställa av</h3>
+                <p class="text-gray-500">Gå direkt till listan över alla avdelningar och välj rätt mottagare.</p>
+            </div>
+
+            <div onclick="showGuide()" class="bg-white p-10 rounded-2xl shadow border border-gray-200 cursor-pointer transform hover:-translate-y-1 hover:shadow-xl transition flex flex-col items-center text-center group">
+                <div class="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6 group-hover:bg-emerald-600 group-hover:text-white transition">
+                    <i class="fas fa-compass text-3xl"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-800 mb-2">Jag vet inte vilken avdelning som ska hantera min beställning</h3>
+                <p class="text-gray-500">Få hjälp genom en snabb guide för att hitta rätt avdelning för ditt ärende.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- SIDA: FRÅGEGUIDE -->
+    <section id="guide-page" class="hidden max-w-3xl mx-auto px-4 py-12">
+        <button onclick="showPage('choose-path-page')" class="mb-6 text-blue-600 hover:underline flex items-center">
+            <i class="fas fa-arrow-left mr-2"></i> Tillbaka
+        </button>
+        <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
+            <div class="mb-8">
+                <i class="fas fa-question-circle text-4xl text-emerald-500 mb-4"></i>
+                <h2 class="text-2xl font-bold text-gray-800">Frågeguide</h2>
+                <p class="text-gray-500 mt-2">Vad handlar ditt ärende i huvudsak om? Välj det alternativ som stämmer bäst.</p>
+            </div>
+            
+            <!-- Frågorna -->
+            <div class="space-y-3" id="guide-options">
+                <button onclick="guideResult('Grafiska produktionsgruppen')" class="w-full p-4 border border-gray-200 rounded-xl hover:bg-emerald-50 hover:border-emerald-200 text-left transition flex justify-between items-center group">
+                    <span class="font-medium text-gray-700 group-hover:text-emerald-700">Bilder, design, tryckmaterial, banners eller layout</span>
+                    <i class="fas fa-chevron-right text-gray-300 group-hover:text-emerald-500"></i>
+                </button>
+                <button onclick="guideResult('IT-support')" class="w-full p-4 border border-gray-200 rounded-xl hover:bg-emerald-50 hover:border-emerald-200 text-left transition flex justify-between items-center group">
+                    <span class="font-medium text-gray-700 group-hover:text-emerald-700">Datorstrul, inloggning, nätverk eller mjukvarufel</span>
+                    <i class="fas fa-chevron-right text-gray-300 group-hover:text-emerald-500"></i>
+                </button>
+                <button onclick="guideResult('Valorganisation')" class="w-full p-4 border border-gray-200 rounded-xl hover:bg-emerald-50 hover:border-emerald-200 text-left transition flex justify-between items-center group">
+                    <span class="font-medium text-gray-700 group-hover:text-emerald-700">Planering av valrörelse, kampanjer eller dörrknackning</span>
+                    <i class="fas fa-chevron-right text-gray-300 group-hover:text-emerald-500"></i>
+                </button>
+                <button onclick="guideResult('Frågor om partiet')" class="w-full p-4 border border-gray-200 rounded-xl hover:bg-emerald-50 hover:border-emerald-200 text-left transition flex justify-between items-center group">
+                    <span class="font-medium text-gray-700 group-hover:text-emerald-700">Allmänna frågor om partiets politik, motioner eller stadgar</span>
+                    <i class="fas fa-chevron-right text-gray-300 group-hover:text-emerald-500"></i>
+                </button>
+            </div>
+
+            <!-- Resultatet (Visas efter man klickat) -->
+            <div id="guide-result" class="hidden mt-8 p-8 bg-emerald-50 rounded-xl border border-emerald-100">
+                <p class="text-emerald-800 mb-2 font-medium">Vi rekommenderar att du skickar ditt ärende till:</p>
+                <strong id="guide-dept-name" class="block text-2xl mb-6 text-emerald-900"></strong>
+                <button onclick="proceedFromGuide()" class="bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-emerald-700 shadow-lg transition">
+                    Gå vidare till beställning
+                </button>
+                <div class="mt-4">
+                    <button onclick="resetGuide()" class="text-sm text-emerald-600 hover:underline">Nej, jag vill välja ett annat alternativ</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- SIDA: VÄLJ AVDELNING (DIREKTVÄG) -->
+    <section id="select-department" class="hidden max-w-7xl mx-auto px-4 py-12">
+        <button onclick="showPage('choose-path-page')" class="mb-6 text-blue-600 hover:underline flex items-center">
+            <i class="fas fa-arrow-left mr-2"></i> Tillbaka
+        </button>
+        <h2 class="text-3xl font-bold mb-8">Välj mottagande avdelning</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="dept-grid"></div>
+    </section>
+
+    <!-- SIDA: SKRIV BESTÄLLNING -->
+    <section id="order-form-page" class="hidden max-w-3xl mx-auto px-4 py-12">
+        <button onclick="showDashboard()" class="mb-6 text-blue-600 hover:underline flex items-center">
+            <i class="fas fa-times mr-2"></i> Avbryt och gå till start
+        </button>
+        <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+            <h2 id="target-dept-name" class="text-2xl font-bold mb-6 text-blue-800">Ny Beställning</h2>
+            <div class="space-y-6">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Beskrivning</label>
+                    <textarea id="order-msg" rows="5" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Beskriv vad som behöver göras..."></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Deadline <span class="text-gray-400 font-normal">(Valfritt)</span></label>
+                    <input type="date" id="order-deadline" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Bifoga bilder eller filer <span class="text-gray-400 font-normal">(Valfritt)</span></label>
+                    <input type="file" id="order-files" multiple class="w-full px-4 py-3 border border-dashed border-gray-300 rounded-xl bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none">
+                    <p class="mt-2 text-xs text-gray-500">Max 5 filer, max 5 MB per fil.</p>
+                </div>
+                <button onclick="confirmOrder()" class="w-full bg-green-600 text-white font-bold py-4 rounded-xl hover:bg-green-700 transition shadow-lg">
+                    Skicka Beställning
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- SIDA: BEKRÄFTELSE -->
+    <section id="confirmation-page" class="hidden max-w-xl mx-auto px-4 py-20 text-center">
+        <div class="bg-white p-10 rounded-3xl shadow-xl">
+            <div class="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i class="fas fa-check text-4xl"></i>
+            </div>
+            <h2 class="text-3xl font-bold mb-2">Skickat!</h2>
+            <p class="text-gray-600 mb-8">Beställningen har tagits emot.</p>
+            <button onclick="showDashboard()" class="text-blue-600 font-semibold hover:underline">Återgå till menyn</button>
+        </div>
+    </section>
+
+    <!-- SIDA: VISA ORDRAR (För user2 / Grafik) -->
+    <section id="manage-orders" class="hidden max-w-7xl mx-auto px-4 py-12">
+        <button onclick="showDashboard()" class="mb-6 text-blue-600 hover:underline flex items-center">
+            <i class="fas fa-arrow-left mr-2"></i> Tillbaka
+        </button>
+        <h2 class="text-3xl font-bold mb-8 text-blue-800">Inkomna Grafikbeställningar</h2>
+        <div class="bg-white rounded-xl shadow overflow-hidden border border-gray-200">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Från</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Meddelande</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bilagor</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase text-red-600">Deadline</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Remiss</th>
+                    </tr>
+                </thead>
+                <tbody id="orders-tbody" class="divide-y divide-gray-200 bg-white">
+                    <!-- Ordrar laddas här -->
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- SIDA: MINA SKICKADE BESTÄLLNINGAR (För user / Beställare) -->
+    <section id="sent-orders" class="hidden max-w-7xl mx-auto px-4 py-12">
+        <button onclick="showDashboard()" class="mb-6 text-blue-600 hover:underline flex items-center">
+            <i class="fas fa-arrow-left mr-2"></i> Tillbaka
+        </button>
+        <h2 class="text-3xl font-bold mb-8 text-blue-800">Mina skickade beställningar</h2>
+        <div class="bg-white rounded-xl shadow overflow-hidden border border-gray-200">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mottagare</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Meddelande</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bilagor</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase text-red-600">Deadline</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="sent-orders-tbody" class="divide-y divide-gray-200 bg-white">
+                    <!-- Skickade beställningar laddas här -->
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- MODAL: BILDFÖRHANDSVISNING -->
+    <div id="attachment-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 p-4 backdrop-blur-sm" onclick="handleAttachmentModalBackdrop(event)">
+        <div class="mx-auto flex min-h-full max-w-5xl items-center justify-center">
+            <div class="relative w-full rounded-3xl bg-white shadow-2xl">
+                <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">Förhandsvisning</p>
+                        <h3 id="attachment-modal-title" class="text-lg font-bold text-gray-900">Bifogad bild</h3>
+                    </div>
+                    <button onclick="closeAttachmentModal()" class="rounded-full bg-gray-100 px-3 py-2 text-gray-700 hover:bg-gray-200" aria-label="Stäng förhandsvisning">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="bg-gray-950 p-4 sm:p-6">
+                    <img id="attachment-modal-image" src="" alt="" class="mx-auto max-h-[75vh] max-w-full rounded-xl object-contain shadow-lg">
+                </div>
+                <div class="flex items-center justify-between gap-3 px-5 py-4">
+                    <span id="attachment-modal-meta" class="text-sm text-gray-500"></span>
+                    <a id="attachment-modal-download" href="#" download class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                        <i class="fas fa-download"></i>
+                        Ladda ner
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: SKICKA BILDFÖRSLAG PÅ REMISS -->
+    <div id="proposal-modal" class="hidden fixed inset-0 z-50 bg-slate-950/75 p-4 backdrop-blur-sm" onclick="handleProposalModalBackdrop(event)">
+        <div class="mx-auto flex min-h-full max-w-2xl items-center justify-center">
+            <div class="w-full rounded-3xl bg-white p-6 shadow-2xl">
+                <div class="mb-5 flex items-start justify-between gap-4">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-emerald-600">Grafikgruppen</p>
+                        <h3 class="text-2xl font-bold text-gray-900">Skicka bildförslag på remiss</h3>
+                        <p id="proposal-modal-order" class="mt-1 text-sm text-gray-500"></p>
+                    </div>
+                    <button onclick="closeProposalModal()" class="rounded-full bg-gray-100 px-3 py-2 text-gray-700 hover:bg-gray-200" aria-label="Stäng remissdialog">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <label class="mb-2 block text-sm font-semibold text-gray-700">Kort meddelande till beställaren</label>
+                        <textarea id="proposal-note" rows="3" class="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Exempel: Här är två versioner. Jag rekommenderar den första."></textarea>
+                    </div>
+                    <div>
+                        <label class="mb-2 block text-sm font-semibold text-gray-700">Bilder att skicka</label>
+                        <input type="file" id="proposal-files" multiple accept="image/*" class="w-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500">
+                        <p class="mt-2 text-xs text-gray-500">Max 5 bilder, max 5 MB per bild.</p>
+                    </div>
+                    <button onclick="submitProposal()" class="w-full rounded-xl bg-emerald-600 py-3 font-bold text-white shadow-lg hover:bg-emerald-700">
+                        Skicka på remiss
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: SVARA PÅ REMISS -->
+    <div id="review-modal" class="hidden fixed inset-0 z-50 bg-slate-950/75 p-4 backdrop-blur-sm" onclick="handleReviewModalBackdrop(event)">
+        <div class="mx-auto flex min-h-full max-w-2xl items-center justify-center">
+            <div class="w-full rounded-3xl bg-white p-6 shadow-2xl">
+                <div class="mb-5 flex items-start justify-between gap-4">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">Beställare</p>
+                        <h3 class="text-2xl font-bold text-gray-900">Betygsätt och svara</h3>
+                        <p id="review-modal-order" class="mt-1 text-sm text-gray-500"></p>
+                    </div>
+                    <button onclick="closeReviewModal()" class="rounded-full bg-gray-100 px-3 py-2 text-gray-700 hover:bg-gray-200" aria-label="Stäng svarsdialog">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <label class="mb-2 block text-sm font-semibold text-gray-700">Betyg</label>
+                        <select id="review-rating" class="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="5">5 - Mycket bra</option>
+                            <option value="4">4 - Bra</option>
+                            <option value="3">3 - Okej</option>
+                            <option value="2">2 - Behöver ändras</option>
+                            <option value="1">1 - Fel riktning</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="mb-2 block text-sm font-semibold text-gray-700">Svar till grafikgruppen</label>
+                        <textarea id="review-response" rows="4" class="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Skriv vad som fungerar eller vad som behöver ändras..."></textarea>
+                    </div>
+                    <div class="rounded-2xl bg-gray-50 p-4">
+                        <label class="flex items-center gap-3 text-sm font-semibold text-gray-800">
+                            <input type="checkbox" id="review-completed" class="h-5 w-5 rounded border-gray-300">
+                            Markera beställningen som avklarad
+                        </label>
+                        <p class="mt-2 text-xs text-gray-500">Lämna omarkerad om grafikgruppen ska justera och skicka nytt förslag.</p>
+                    </div>
+                    <button onclick="submitReview()" class="w-full rounded-xl bg-blue-600 py-3 font-bold text-white shadow-lg hover:bg-blue-700">
+                        Skicka svar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const departments = ["Frågor om partiet", "Valorganisation", "Grafiska produktionsgruppen", "IT-support"];
+        const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:3001' : '';
+        const MAX_ATTACHMENTS = 5;
+        const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
+
+        let currentUser = null;
+        let currentDeptTarget = "";
+        let recommendedDept = "";
+        let currentProposalOrderId = "";
+        let currentReviewOrderId = "";
+        let currentReviewProposalId = "";
+        const attachmentPreviewStore = new Map();
+
+        // Demobeställningar för grafikgruppen
+        const demoOrders = [
+            { from: 'Erik (Kommunikation)', msg: 'Design av ny flyer för sommarkampanjen.', deadline: '2024-06-15', dept: 'Grafiska produktionsgruppen', status: 'Väntar' },
+            { from: 'Anna (HR)', msg: 'Uppdatera profilbilder för ledningsgruppen.', deadline: '2024-06-20', dept: 'Grafiska produktionsgruppen', status: 'Pågående' },
+            { from: 'Marknadsavdelningen', msg: 'Ta fram 3 st olika banners för Facebook-annonsering.', deadline: '', dept: 'Grafiska produktionsgruppen', status: 'Ny' }
+        ];
+
+        async function apiRequest(path, options = {}) {
+            const response = await fetch(`${API_BASE}${path}`, {
+                headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+                ...options
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                const error = new Error(data.error || 'api_error');
+                error.response = data;
+                throw error;
+            }
+            return data;
+        }
+
+        function getOrders() {
+            const data = sessionStorage.getItem('kansli_orders_v2');
+            return data ? JSON.parse(data) : demoOrders;
+        }
+
+        function saveLocalOrder(order) {
+            const orders = getOrders();
+            orders.unshift(order); // Lägg till överst
+            sessionStorage.setItem('kansli_orders_v2', JSON.stringify(orders));
+        }
+
+        function escapeHtml(value) {
+            return String(value || '').replace(/[&<>"']/g, (character) => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[character]));
+        }
+
+        function formatFileSize(size) {
+            const bytes = Number(size || 0);
+            if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+            if (bytes >= 1024) return `${Math.round(bytes / 1024)} kB`;
+            return `${bytes} B`;
+        }
+
+        function isImageAttachment(attachment) {
+            return String(attachment.type || '').startsWith('image/')
+                || String(attachment.dataUrl || '').startsWith('data:image/');
+        }
+
+        function registerAttachmentPreview(attachment) {
+            const id = attachment.id || `attachment-${attachmentPreviewStore.size + 1}-${Date.now()}`;
+            attachmentPreviewStore.set(id, attachment);
+            return id;
+        }
+
+        function readFileAsAttachment(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve({
+                    name: file.name,
+                    type: file.type || 'application/octet-stream',
+                    size: file.size,
+                    dataUrl: reader.result
+                });
+                reader.onerror = () => reject(reader.error);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function readAttachmentsFromInput(inputId, options = {}) {
+            const input = document.getElementById(inputId);
+            const files = Array.from(input.files || []);
+            const label = options.label || 'filer';
+
+            if (files.length > MAX_ATTACHMENTS) {
+                alert(`Du kan bifoga max ${MAX_ATTACHMENTS} ${label}.`);
+                return null;
+            }
+
+            const tooLarge = files.find(file => file.size > MAX_ATTACHMENT_SIZE);
+            if (tooLarge) {
+                alert(`${tooLarge.name} är större än 5 MB.`);
+                return null;
+            }
+
+            if (options.requireImages) {
+                const notImage = files.find(file => !file.type.startsWith('image/'));
+                if (notImage) {
+                    alert(`${notImage.name} är inte en bild.`);
+                    return null;
+                }
+            }
+
+            return Promise.all(files.map(readFileAsAttachment));
+        }
+
+        async function readSelectedAttachments() {
+            return readAttachmentsFromInput('order-files', { label: 'filer' });
+        }
+
+        function renderAttachments(attachments = []) {
+            if (!attachments.length) return '<span class="text-gray-400">-</span>';
+
+            return `
+                <div class="flex flex-wrap gap-3">
+                    ${attachments.map((attachment) => {
+                        const previewId = registerAttachmentPreview(attachment);
+                        const name = escapeHtml(attachment.name);
+                        const size = escapeHtml(formatFileSize(attachment.size));
+
+                        if (isImageAttachment(attachment)) {
+                            return `
+                                <button type="button" onclick="openAttachmentModal('${previewId}')" class="group w-32 overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md">
+                                    <span class="block h-20 bg-gray-100">
+                                        <img src="${attachment.dataUrl}" alt="${name}" class="h-full w-full object-cover transition group-hover:scale-105">
+                                    </span>
+                                    <span class="block truncate px-2 pt-2 text-xs font-semibold text-gray-800">${name}</span>
+                                    <span class="block px-2 pb-2 text-[11px] text-gray-400">${size}</span>
+                                </button>
+                            `;
+                        }
+
+                        return `
+                            <a href="${attachment.dataUrl}" download="${name}" class="inline-flex max-w-48 items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-blue-600 hover:border-blue-300 hover:bg-blue-50" target="_blank" rel="noopener">
+                                <i class="fas fa-paperclip text-xs"></i>
+                                <span class="truncate">${name}</span>
+                            </a>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function openAttachmentModal(previewId) {
+            const attachment = attachmentPreviewStore.get(previewId);
+            if (!attachment) return;
+
+            document.getElementById('attachment-modal-title').innerText = attachment.name || 'Bifogad bild';
+            document.getElementById('attachment-modal-meta').innerText = `${attachment.type || 'Bild'} · ${formatFileSize(attachment.size)}`;
+            document.getElementById('attachment-modal-image').src = attachment.dataUrl;
+            document.getElementById('attachment-modal-image').alt = attachment.name || 'Bifogad bild';
+            document.getElementById('attachment-modal-download').href = attachment.dataUrl;
+            document.getElementById('attachment-modal-download').download = attachment.name || 'bifogad-bild';
+            document.getElementById('attachment-modal').classList.remove('hidden');
+            document.body.classList.add('overflow-hidden');
+        }
+
+        function closeAttachmentModal() {
+            document.getElementById('attachment-modal').classList.add('hidden');
+            document.getElementById('attachment-modal-image').src = '';
+            document.body.classList.remove('overflow-hidden');
+        }
+
+        function renderReviewSummary(proposal) {
+            if (!proposal.review) {
+                return '<span class="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Väntar på svar</span>';
+            }
+
+            const stars = '★'.repeat(proposal.review.rating) + '☆'.repeat(5 - proposal.review.rating);
+            const verdict = proposal.review.completed ? 'Avklarad' : 'Behöver ändras';
+            return `
+                <div class="rounded-xl bg-slate-50 p-3 text-xs text-gray-700">
+                    <div class="font-bold text-amber-500">${stars}</div>
+                    <div class="mt-1 font-semibold text-gray-900">${verdict}</div>
+                    <div class="mt-1">${escapeHtml(proposal.review.response)}</div>
+                </div>
+            `;
+        }
+
+        function latestProposal(order) {
+            return Array.isArray(order.proposals) && order.proposals.length ? order.proposals[0] : null;
+        }
+
+        function renderProposalPanel(order, mode) {
+            const proposal = latestProposal(order);
+
+            if (!proposal) {
+                return '<span class="text-gray-400">Inget förslag skickat</span>';
+            }
+
+            const reviewButton = mode === 'orderer' && !proposal.review
+                ? `<button onclick="openReviewModal('${order.id}', '${proposal.id}')" class="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">Betygsätt och svara</button>`
+                : '';
+
+            return `
+                <div class="min-w-64 space-y-3">
+                    <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+                        <div class="text-xs font-bold uppercase tracking-wide text-emerald-700">Förslag på remiss</div>
+                        <div class="mt-1 text-sm text-gray-700">${escapeHtml(proposal.note)}</div>
+                        <div class="mt-3">${renderAttachments(proposal.attachments)}</div>
+                    </div>
+                    ${renderReviewSummary(proposal)}
+                    ${reviewButton}
+                </div>
+            `;
+        }
+
+        function openProposalModal(orderId) {
+            const order = findCachedOrder(orderId);
+            currentProposalOrderId = orderId;
+            document.getElementById('proposal-modal-order').innerText = order ? `${order.from}: ${order.msg}` : '';
+            document.getElementById('proposal-note').value = '';
+            document.getElementById('proposal-files').value = '';
+            document.getElementById('proposal-modal').classList.remove('hidden');
+            document.body.classList.add('overflow-hidden');
+        }
+
+        function closeProposalModal() {
+            document.getElementById('proposal-modal').classList.add('hidden');
+            currentProposalOrderId = '';
+            document.body.classList.remove('overflow-hidden');
+        }
+
+        function handleProposalModalBackdrop(event) {
+            if (event.target.id === 'proposal-modal') closeProposalModal();
+        }
+
+        function openReviewModal(orderId, proposalId) {
+            const order = findCachedOrder(orderId);
+            currentReviewOrderId = orderId;
+            currentReviewProposalId = proposalId;
+            document.getElementById('review-modal-order').innerText = order ? `${order.dept}: ${order.msg}` : '';
+            document.getElementById('review-rating').value = '5';
+            document.getElementById('review-response').value = '';
+            document.getElementById('review-completed').checked = false;
+            document.getElementById('review-modal').classList.remove('hidden');
+            document.body.classList.add('overflow-hidden');
+        }
+
+        function closeReviewModal() {
+            document.getElementById('review-modal').classList.add('hidden');
+            currentReviewOrderId = '';
+            currentReviewProposalId = '';
+            document.body.classList.remove('overflow-hidden');
+        }
+
+        function handleReviewModalBackdrop(event) {
+            if (event.target.id === 'review-modal') closeReviewModal();
+        }
+
+        let cachedOrders = [];
+
+        function findCachedOrder(orderId) {
+            return cachedOrders.find(order => order.id === orderId);
+        }
+
+        function updateLocalOrder(orderId, updater) {
+            const orders = getOrders();
+            const index = orders.findIndex(order => order.id === orderId);
+            if (index === -1) return null;
+            orders[index] = updater(orders[index]);
+            sessionStorage.setItem('kansli_orders_v2', JSON.stringify(orders));
+            return orders[index];
+        }
+
+        async function submitProposal() {
+            const note = document.getElementById('proposal-note').value.trim();
+            if (!note) return alert('Skriv ett kort meddelande till beställaren.');
+
+            const attachments = await readAttachmentsFromInput('proposal-files', { label: 'bilder', requireImages: true });
+            if (attachments === null) return;
+            if (attachments.length === 0) return alert('Ladda upp minst en bild.');
+
+            try {
+                await apiRequest(`/api/orders/${currentProposalOrderId}/proposals`, {
+                    method: 'POST',
+                    body: JSON.stringify({ from: currentUser.name, note, attachments })
+                });
+            } catch (error) {
+                if (window.location.protocol !== 'file:') {
+                    alert('Förslaget kunde inte skickas. Försök igen.');
+                    return;
+                }
+                updateLocalOrder(currentProposalOrderId, (order) => ({
+                    ...order,
+                    status: 'På remiss',
+                    proposals: [{
+                        id: `proposal-${Date.now()}`,
+                        createdAt: new Date().toISOString(),
+                        from: currentUser.name,
+                        note,
+                        attachments,
+                        review: null
+                    }, ...(order.proposals || [])]
+                }));
+            }
+
+            closeProposalModal();
+            loadGraphicsOrders();
+        }
+
+        async function submitReview() {
+            const rating = Number(document.getElementById('review-rating').value);
+            const response = document.getElementById('review-response').value.trim();
+            const completed = document.getElementById('review-completed').checked;
+
+            if (!response) return alert('Skriv ett svar till grafikgruppen.');
+
+            try {
+                await apiRequest(`/api/orders/${currentReviewOrderId}/review`, {
+                    method: 'POST',
+                    body: JSON.stringify({ proposalId: currentReviewProposalId, rating, response, completed })
+                });
+            } catch (error) {
+                if (window.location.protocol !== 'file:') {
+                    alert('Svaret kunde inte skickas. Försök igen.');
+                    return;
+                }
+                updateLocalOrder(currentReviewOrderId, (order) => ({
+                    ...order,
+                    status: completed ? 'Avklarad' : 'Behöver ändras',
+                    proposals: (order.proposals || []).map((proposal) => proposal.id === currentReviewProposalId ? {
+                        ...proposal,
+                        review: { rating, response, completed, reviewedAt: new Date().toISOString() }
+                    } : proposal)
+                }));
+            }
+
+            closeReviewModal();
+            loadSentOrders();
+        }
+
+        async function reopenOrder(orderId) {
+            const order = findCachedOrder(orderId);
+            const note = prompt('Varför ska ärendet återöppnas?', 'Behöver justeras igen.');
+            if (note === null) return;
+
+            try {
+                await apiRequest(`/api/orders/${orderId}/reopen`, {
+                    method: 'POST',
+                    body: JSON.stringify({ note })
+                });
+            } catch (error) {
+                if (window.location.protocol !== 'file:') {
+                    alert('Ärendet kunde inte återöppnas. Försök igen.');
+                    return;
+                }
+                updateLocalOrder(orderId, (localOrder) => ({
+                    ...localOrder,
+                    status: 'Återöppnad',
+                    reopenedAt: new Date().toISOString(),
+                    reopenHistory: [{
+                        reopenedAt: new Date().toISOString(),
+                        note
+                    }, ...(localOrder.reopenHistory || [])]
+                }));
+            }
+
+            alert(`${order ? order.msg : 'Ärendet'} är återöppnat.`);
+            loadGraphicsOrders();
+        }
+
+        function handleAttachmentModalBackdrop(event) {
+            if (event.target.id === 'attachment-modal') closeAttachmentModal();
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') closeAttachmentModal();
+        });
+
+        async function login() {
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+
+            try {
+                const result = await apiRequest('/api/login', {
+                    method: 'POST',
+                    body: JSON.stringify({ username: user, password: pass })
+                });
+                currentUser = result.user;
+            } catch (error) {
+                if (API_BASE || window.location.protocol !== 'file:') {
+                    alert("Fel inloggning!");
+                    return;
+                }
+
+                if (user === 'user' && pass === 'user') {
+                    currentUser = { name: 'Personal', role: 'orderer' };
+                } else if (user === 'user2' && pass === 'user2') {
+                    currentUser = { name: 'Grafikgruppen', role: 'graphics' };
+                } else {
+                    alert("Fel inloggning!");
+                    return;
+                }
+            }
+
+            document.getElementById('login-page').classList.add('hidden');
+            document.getElementById('main-header').classList.remove('hidden');
+            document.getElementById('user-info').innerText = currentUser.name;
+            showDashboard();
+        }
+
+        function logout() {
+            currentUser = null;
+            location.reload();
+        }
+
+        function hideAll() {
+            ['dashboard', 'choose-path-page', 'guide-page', 'select-department', 'order-form-page', 'confirmation-page', 'manage-orders', 'sent-orders']
+            .forEach(id => document.getElementById(id).classList.add('hidden'));
+        }
+
+        function showPage(id) {
+            hideAll();
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function showDashboard() {
+            showPage('dashboard');
+            const menu = document.getElementById('menu-container');
+            menu.innerHTML = '';
+
+            if (currentUser.role === 'orderer') {
+                menu.appendChild(createMenuBtn("Gör en beställning", "fa-plus-circle", "bg-blue-600", () => showPage('choose-path-page')));
+                menu.appendChild(createMenuBtn("Mina skickade beställningar", "fa-list-check", "bg-emerald-600", () => loadSentOrders()));
+            }
+
+            if (currentUser.role === 'graphics') {
+                menu.appendChild(createMenuBtn("Visa grafikbeställningar", "fa-paint-brush", "bg-purple-600", () => loadGraphicsOrders()));
+            }
+        }
+
+        function createMenuBtn(title, icon, color, action) {
+            const div = document.createElement('div');
+            div.className = `${color} p-10 rounded-2xl shadow-lg cursor-pointer transform hover:scale-105 transition text-white flex flex-col items-center space-y-4`;
+            div.onclick = action;
+            div.innerHTML = `<i class="fas ${icon} text-4xl"></i><span class="text-xl font-bold">${title}</span>`;
+            return div;
+        }
+
+        function showDepartments() {
+            showPage('select-department');
+            const grid = document.getElementById('dept-grid');
+            grid.innerHTML = '';
+            departments.forEach(dept => {
+                const btn = document.createElement('button');
+                btn.className = "p-4 bg-white border border-gray-200 rounded-xl hover:bg-blue-50 transition text-left flex justify-between items-center";
+                btn.innerHTML = `<span>${dept}</span> <i class="fas fa-chevron-right text-gray-300"></i>`;
+                btn.onclick = () => {
+                    openOrderForm(dept);
+                };
+                grid.appendChild(btn);
+            });
+        }
+
+        // --- GUIDE LOGIK ---
+        function showGuide() {
+            resetGuide();
+            showPage('guide-page');
+        }
+
+        function guideResult(dept) {
+            recommendedDept = dept;
+            document.getElementById('guide-options').classList.add('hidden');
+            document.getElementById('guide-result').classList.remove('hidden');
+            document.getElementById('guide-dept-name').innerText = dept;
+        }
+
+        function resetGuide() {
+            document.getElementById('guide-options').classList.remove('hidden');
+            document.getElementById('guide-result').classList.add('hidden');
+            recommendedDept = "";
+        }
+
+        function proceedFromGuide() {
+            openOrderForm(recommendedDept);
+        }
+        // -------------------
+
+        function openOrderForm(dept) {
+            currentDeptTarget = dept;
+            document.getElementById('target-dept-name').innerText = "Beställning till: " + dept;
+            showPage('order-form-page');
+        }
+
+        async function confirmOrder() {
+            const msg = document.getElementById('order-msg').value;
+            const deadline = document.getElementById('order-deadline').value;
+            if(!msg) return alert("Skriv ett meddelande");
+
+            const attachments = await readSelectedAttachments();
+            if (attachments === null) return;
+
+            const order = {
+                from: currentUser.name,
+                msg: msg,
+                deadline: deadline,
+                dept: currentDeptTarget,
+                status: 'Ny',
+                attachments: attachments
+            };
+
+            try {
+                await apiRequest('/api/orders', {
+                    method: 'POST',
+                    body: JSON.stringify(order)
+                });
+            } catch (error) {
+                if (window.location.protocol !== 'file:') {
+                    alert("Beställningen kunde inte skickas. Försök igen.");
+                    return;
+                }
+                saveLocalOrder(order);
+            }
+
+            document.getElementById('order-msg').value = '';
+            document.getElementById('order-deadline').value = '';
+            document.getElementById('order-files').value = '';
+            showPage('confirmation-page');
+        }
+
+        async function loadGraphicsOrders() {
+            showPage('manage-orders');
+            const tbody = document.getElementById('orders-tbody');
+            tbody.innerHTML = '';
+            attachmentPreviewStore.clear();
+
+            let graphicsOrders;
+            try {
+                const result = await apiRequest('/api/orders?dept=Grafiska%20produktionsgruppen');
+                graphicsOrders = result.orders;
+            } catch (error) {
+                graphicsOrders = getOrders().filter(o => o.dept === "Grafiska produktionsgruppen");
+            }
+
+            if(graphicsOrders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">Inga beställningar hittades.</td></tr>';
+                return;
+            }
+
+            cachedOrders = graphicsOrders;
+
+            graphicsOrders.forEach(o => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="px-6 py-4 text-sm font-medium text-gray-900">${escapeHtml(o.from)}</td>
+                    <td class="px-6 py-4 text-sm text-gray-500">${escapeHtml(o.msg)}</td>
+                    <td class="px-6 py-4 text-sm">${renderAttachments(o.attachments)}</td>
+                    <td class="px-6 py-4 text-sm font-bold text-red-600">${escapeHtml(o.deadline || '-')}</td>
+                    <td class="px-6 py-4"><span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">${escapeHtml(o.status)}</span></td>
+                    <td class="px-6 py-4">
+                        <div class="space-y-3">
+                            <button onclick="openProposalModal('${o.id}')" class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">
+                                Ladda upp förslag
+                            </button>
+                            ${o.status === 'Avklarad' ? `
+                                <button onclick="reopenOrder('${o.id}')" class="ml-2 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-white hover:bg-amber-600">
+                                    Återöppna
+                                </button>
+                            ` : ''}
+                            ${renderProposalPanel(o, 'graphics')}
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function loadSentOrders() {
+            showPage('sent-orders');
+            const tbody = document.getElementById('sent-orders-tbody');
+            tbody.innerHTML = '';
+            attachmentPreviewStore.clear();
+
+            let sentOrders;
+            try {
+                const result = await apiRequest(`/api/orders?from=${encodeURIComponent(currentUser.name)}`);
+                sentOrders = result.orders;
+            } catch (error) {
+                sentOrders = getOrders().filter(o => o.from === currentUser.name);
+            }
+
+            if(sentOrders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Du har inte skickat några beställningar än.</td></tr>';
+                return;
+            }
+
+            cachedOrders = sentOrders;
+
+            sentOrders.forEach(o => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="px-6 py-4 text-sm font-medium text-gray-900">${escapeHtml(o.dept)}</td>
+                    <td class="px-6 py-4 text-sm text-gray-500">${escapeHtml(o.msg)}</td>
+                    <td class="px-6 py-4 text-sm">
+                        <div class="space-y-4">
+                            ${renderAttachments(o.attachments)}
+                            ${renderProposalPanel(o, 'orderer')}
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-sm font-bold text-red-600">${escapeHtml(o.deadline || '-')}</td>
+                    <td class="px-6 py-4"><span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">${escapeHtml(o.status)}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    </script>
+</body>
+</html>

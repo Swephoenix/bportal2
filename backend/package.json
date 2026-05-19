@@ -1,0 +1,14 @@
+{
+  "name": "bportal-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backendserver för Kanslihuset beställningsportal.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
