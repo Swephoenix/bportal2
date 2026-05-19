@@ -3,41 +3,104 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kanslihuset - Beställningsportal</title>
+    <title>portalen - Beställningsportal</title>
+    <link rel="icon" href="assets/b-logo.svg" type="image/svg+xml">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        @import url('https://fonts.googleapis.com/css2?family=Arsenal:wght@400;700&display=swap');
+        body { font-family: 'Arsenal', sans-serif; background-color: #f3f4f6; overflow-x: hidden; }
         .gradient-bg { background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); }
         .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+        .brand-logo { width: 2.25rem; height: 2.25rem; object-fit: contain; }
+        .login-logo { width: 5rem; height: 5rem; object-fit: contain; margin: 0 auto 1rem; }
+        .responsive-table { width: 100%; }
         .hidden { display: none; }
+
+        @media (max-width: 640px) {
+            body { background-color: #f8fafc; }
+            input,
+            textarea,
+            select,
+            button {
+                font-size: 16px;
+            }
+            .brand-logo { width: 2rem; height: 2rem; }
+            .login-logo { width: 4rem; height: 4rem; }
+            .mobile-section { padding: 1.5rem 1rem; }
+            .mobile-card { border-radius: 1.25rem; padding: 1.25rem; }
+            .mobile-title { font-size: 1.5rem; line-height: 2rem; }
+            .mobile-stack { flex-direction: column; align-items: stretch; }
+            .mobile-stack > * { width: 100%; justify-content: center; }
+            .mobile-modal { max-height: calc(100vh - 2rem); overflow-y: auto; border-radius: 1.25rem; }
+            .responsive-table,
+            .responsive-table thead,
+            .responsive-table tbody,
+            .responsive-table tr,
+            .responsive-table th,
+            .responsive-table td {
+                display: block;
+                width: 100%;
+            }
+            .responsive-table thead {
+                display: none;
+            }
+            .responsive-table tbody {
+                display: grid;
+                gap: 1rem;
+                background: #f8fafc;
+            }
+            .responsive-table tr {
+                overflow: hidden;
+                border: 1px solid #e5e7eb;
+                border-radius: 1.25rem;
+                background: white;
+                box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+            }
+            .responsive-table td {
+                border: 0;
+                padding: 0.85rem 1rem;
+                overflow-wrap: anywhere;
+            }
+            .responsive-table td::before {
+                content: attr(data-label);
+                display: block;
+                margin-bottom: 0.25rem;
+                color: #64748b;
+                font-size: 0.7rem;
+                font-weight: 800;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+            }
+            .responsive-table td + td {
+                border-top: 1px solid #eef2f7;
+            }
+        }
     </style>
 </head>
 <body>
 
     <!-- Header -->
     <header id="main-header" class="hidden bg-white shadow-sm border-b border-gray-200">
-        <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div class="max-w-7xl mx-auto px-4 py-3 min-h-16 flex items-center justify-between gap-3">
             <div class="flex items-center space-x-2">
-                <div class="bg-blue-600 p-2 rounded-lg">
-                    <i class="fas fa-landmark text-white"></i>
-                </div>
-                <span class="text-xl font-bold text-gray-800">Kansli<span class="text-blue-600">huset</span></span>
+                <img src="assets/b-logo.svg" alt="b" class="brand-logo">
+                <span class="text-xl font-bold text-blue-600">portalen</span>
             </div>
-            <div class="flex items-center space-x-4">
-                <span id="user-info" class="text-sm text-gray-600 font-medium"></span>
-                <button onclick="logout()" class="text-sm bg-red-50 text-red-600 px-3 py-1.5 rounded-md hover:bg-red-100 transition">Logga ut</button>
+            <div class="flex min-w-0 items-center justify-end gap-2 sm:gap-4">
+                <span id="user-info" class="truncate text-sm text-gray-600 font-medium"></span>
+                <button onclick="logout()" class="shrink-0 text-sm bg-red-50 text-red-600 px-3 py-1.5 rounded-md hover:bg-red-100 transition">Logga ut</button>
             </div>
         </div>
     </header>
 
     <!-- LOGIN SIDA -->
     <div id="login-page" class="min-h-screen flex items-center justify-center gradient-bg p-4">
-        <div class="glass-card p-8 rounded-2xl shadow-2xl w-full max-w-md">
+        <div class="glass-card mobile-card p-8 rounded-2xl shadow-2xl w-full max-w-md">
             <div class="text-center mb-8">
+                <img src="assets/b-logo.svg" alt="b" class="login-logo">
                 <h1 class="text-3xl font-bold text-gray-800">Logga in</h1>
-                <p class="text-gray-500 mt-2">Kanslihuset Plattform</p>
+                <p class="text-gray-500 mt-2">portalen</p>
             </div>
             <div class="space-y-4">
                 <div>
@@ -60,19 +123,19 @@
     </div>
 
     <!-- HUVUDMENY -->
-    <main id="dashboard" class="hidden max-w-7xl mx-auto px-4 py-12">
+    <main id="dashboard" class="hidden mobile-section max-w-7xl mx-auto px-4 py-12">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="menu-container"></div>
     </main>
 
     <!-- SIDA: VÄLJ VÄG (VET ELLER VET INTE AVDELNING) -->
-    <section id="choose-path-page" class="hidden max-w-5xl mx-auto px-4 py-12">
+    <section id="choose-path-page" class="hidden mobile-section max-w-5xl mx-auto px-4 py-12">
         <button onclick="showDashboard()" class="mb-6 text-blue-600 hover:underline flex items-center">
             <i class="fas fa-arrow-left mr-2"></i> Tillbaka till menyn
         </button>
-        <h2 class="text-3xl font-bold mb-8 text-center text-gray-800">Hur vill du fortsätta?</h2>
+        <h2 class="mobile-title text-3xl font-bold mb-8 text-center text-gray-800">Hur vill du fortsätta?</h2>
         
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div onclick="showDepartments()" class="bg-white p-10 rounded-2xl shadow border border-gray-200 cursor-pointer transform hover:-translate-y-1 hover:shadow-xl transition flex flex-col items-center text-center group">
+            <div onclick="showDepartments()" class="mobile-card bg-white p-10 rounded-2xl shadow border border-gray-200 cursor-pointer transform hover:-translate-y-1 hover:shadow-xl transition flex flex-col items-center text-center group">
                 <div class="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-6 group-hover:bg-blue-600 group-hover:text-white transition">
                     <i class="fas fa-sitemap text-3xl"></i>
                 </div>
@@ -80,7 +143,7 @@
                 <p class="text-gray-500">Gå direkt till listan över alla avdelningar och välj rätt mottagare.</p>
             </div>
 
-            <div onclick="showGuide()" class="bg-white p-10 rounded-2xl shadow border border-gray-200 cursor-pointer transform hover:-translate-y-1 hover:shadow-xl transition flex flex-col items-center text-center group">
+            <div onclick="showGuide()" class="mobile-card bg-white p-10 rounded-2xl shadow border border-gray-200 cursor-pointer transform hover:-translate-y-1 hover:shadow-xl transition flex flex-col items-center text-center group">
                 <div class="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6 group-hover:bg-emerald-600 group-hover:text-white transition">
                     <i class="fas fa-compass text-3xl"></i>
                 </div>
@@ -91,11 +154,11 @@
     </section>
 
     <!-- SIDA: FRÅGEGUIDE -->
-    <section id="guide-page" class="hidden max-w-3xl mx-auto px-4 py-12">
+    <section id="guide-page" class="hidden mobile-section max-w-3xl mx-auto px-4 py-12">
         <button onclick="showPage('choose-path-page')" class="mb-6 text-blue-600 hover:underline flex items-center">
             <i class="fas fa-arrow-left mr-2"></i> Tillbaka
         </button>
-        <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
+        <div class="mobile-card bg-white p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
             <div class="mb-8">
                 <i class="fas fa-question-circle text-4xl text-emerald-500 mb-4"></i>
                 <h2 class="text-2xl font-bold text-gray-800">Frågeguide</h2>
@@ -137,21 +200,21 @@
     </section>
 
     <!-- SIDA: VÄLJ AVDELNING (DIREKTVÄG) -->
-    <section id="select-department" class="hidden max-w-7xl mx-auto px-4 py-12">
+    <section id="select-department" class="hidden mobile-section max-w-7xl mx-auto px-4 py-12">
         <button onclick="showPage('choose-path-page')" class="mb-6 text-blue-600 hover:underline flex items-center">
             <i class="fas fa-arrow-left mr-2"></i> Tillbaka
         </button>
-        <h2 class="text-3xl font-bold mb-8">Välj mottagande avdelning</h2>
+        <h2 class="mobile-title text-3xl font-bold mb-8">Välj mottagande avdelning</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="dept-grid"></div>
     </section>
 
     <!-- SIDA: SKRIV BESTÄLLNING -->
-    <section id="order-form-page" class="hidden max-w-3xl mx-auto px-4 py-12">
+    <section id="order-form-page" class="hidden mobile-section max-w-3xl mx-auto px-4 py-12">
         <button onclick="showDashboard()" class="mb-6 text-blue-600 hover:underline flex items-center">
             <i class="fas fa-times mr-2"></i> Avbryt och gå till start
         </button>
-        <div class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
-            <h2 id="target-dept-name" class="text-2xl font-bold mb-6 text-blue-800">Ny Beställning</h2>
+        <div class="mobile-card bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+            <h2 id="target-dept-name" class="mobile-title text-2xl font-bold mb-6 text-blue-800">Ny Beställning</h2>
             <div class="space-y-6">
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-2">Beskrivning</label>
@@ -159,7 +222,13 @@
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-2">Deadline <span class="text-gray-400 font-normal">(Valfritt)</span></label>
-                    <input type="date" id="order-deadline" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                    <div class="flex gap-2">
+                        <input type="text" id="order-deadline" inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" placeholder="yyyy-mm-dd" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                        <button type="button" onclick="openDeadlineCalendar()" class="shrink-0 rounded-xl border border-gray-200 bg-white px-4 text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Välj deadline i kalender">
+                            <i class="fas fa-calendar-days"></i>
+                        </button>
+                        <input type="date" id="order-deadline-picker" class="sr-only" onchange="setDeadlineFromCalendar()">
+                    </div>
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-2">Bifoga bilder eller filer <span class="text-gray-400 font-normal">(Valfritt)</span></label>
@@ -174,8 +243,8 @@
     </section>
 
     <!-- SIDA: BEKRÄFTELSE -->
-    <section id="confirmation-page" class="hidden max-w-xl mx-auto px-4 py-20 text-center">
-        <div class="bg-white p-10 rounded-3xl shadow-xl">
+    <section id="confirmation-page" class="hidden mobile-section max-w-xl mx-auto px-4 py-20 text-center">
+        <div class="mobile-card bg-white p-10 rounded-3xl shadow-xl">
             <div class="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
                 <i class="fas fa-check text-4xl"></i>
             </div>
@@ -186,13 +255,13 @@
     </section>
 
     <!-- SIDA: VISA ORDRAR (För user2 / Grafik) -->
-    <section id="manage-orders" class="hidden max-w-7xl mx-auto px-4 py-12">
+    <section id="manage-orders" class="hidden mobile-section max-w-7xl mx-auto px-4 py-12">
         <button onclick="showDashboard()" class="mb-6 text-blue-600 hover:underline flex items-center">
             <i class="fas fa-arrow-left mr-2"></i> Tillbaka
         </button>
-        <h2 class="text-3xl font-bold mb-8 text-blue-800">Inkomna Grafikbeställningar</h2>
+        <h2 class="mobile-title text-3xl font-bold mb-8 text-blue-800">Inkomna Grafikbeställningar</h2>
         <div class="bg-white rounded-xl shadow overflow-hidden border border-gray-200">
-            <table class="min-w-full divide-y divide-gray-200">
+            <table class="responsive-table min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Från</th>
@@ -211,13 +280,13 @@
     </section>
 
     <!-- SIDA: MINA SKICKADE BESTÄLLNINGAR (För user / Beställare) -->
-    <section id="sent-orders" class="hidden max-w-7xl mx-auto px-4 py-12">
+    <section id="sent-orders" class="hidden mobile-section max-w-7xl mx-auto px-4 py-12">
         <button onclick="showDashboard()" class="mb-6 text-blue-600 hover:underline flex items-center">
             <i class="fas fa-arrow-left mr-2"></i> Tillbaka
         </button>
-        <h2 class="text-3xl font-bold mb-8 text-blue-800">Mina skickade beställningar</h2>
+        <h2 class="mobile-title text-3xl font-bold mb-8 text-blue-800">Mina skickade beställningar</h2>
         <div class="bg-white rounded-xl shadow overflow-hidden border border-gray-200">
-            <table class="min-w-full divide-y divide-gray-200">
+            <table class="responsive-table min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mottagare</th>
@@ -237,7 +306,7 @@
     <!-- MODAL: BILDFÖRHANDSVISNING -->
     <div id="attachment-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 p-4 backdrop-blur-sm" onclick="handleAttachmentModalBackdrop(event)">
         <div class="mx-auto flex min-h-full max-w-5xl items-center justify-center">
-            <div class="relative w-full rounded-3xl bg-white shadow-2xl">
+            <div class="mobile-modal relative w-full rounded-3xl bg-white shadow-2xl">
                 <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4">
                     <div>
                         <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">Förhandsvisning</p>
@@ -250,7 +319,7 @@
                 <div class="bg-gray-950 p-4 sm:p-6">
                     <img id="attachment-modal-image" src="" alt="" class="mx-auto max-h-[75vh] max-w-full rounded-xl object-contain shadow-lg">
                 </div>
-                <div class="flex items-center justify-between gap-3 px-5 py-4">
+                <div class="mobile-stack flex items-center justify-between gap-3 px-5 py-4">
                     <span id="attachment-modal-meta" class="text-sm text-gray-500"></span>
                     <a id="attachment-modal-download" href="#" download class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
                         <i class="fas fa-download"></i>
@@ -264,7 +333,7 @@
     <!-- MODAL: SKICKA BILDFÖRSLAG PÅ REMISS -->
     <div id="proposal-modal" class="hidden fixed inset-0 z-50 bg-slate-950/75 p-4 backdrop-blur-sm" onclick="handleProposalModalBackdrop(event)">
         <div class="mx-auto flex min-h-full max-w-2xl items-center justify-center">
-            <div class="w-full rounded-3xl bg-white p-6 shadow-2xl">
+            <div class="mobile-modal w-full rounded-3xl bg-white p-6 shadow-2xl">
                 <div class="mb-5 flex items-start justify-between gap-4">
                     <div>
                         <p class="text-xs font-semibold uppercase tracking-wide text-emerald-600">Grafikgruppen</p>
@@ -296,7 +365,7 @@
     <!-- MODAL: SVARA PÅ REMISS -->
     <div id="review-modal" class="hidden fixed inset-0 z-50 bg-slate-950/75 p-4 backdrop-blur-sm" onclick="handleReviewModalBackdrop(event)">
         <div class="mx-auto flex min-h-full max-w-2xl items-center justify-center">
-            <div class="w-full rounded-3xl bg-white p-6 shadow-2xl">
+            <div class="mobile-modal w-full rounded-3xl bg-white p-6 shadow-2xl">
                 <div class="mb-5 flex items-start justify-between gap-4">
                     <div>
                         <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">Beställare</p>
@@ -400,6 +469,47 @@
             return `${bytes} B`;
         }
 
+        function formatDate(value) {
+            if (value instanceof Date) {
+                const year = value.getFullYear();
+                const month = String(value.getMonth() + 1).padStart(2, '0');
+                const day = String(value.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+
+            const text = String(value || '').trim();
+            if (!text) return '-';
+
+            const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+            if (match) return match[1];
+
+            const date = new Date(text);
+            return Number.isNaN(date.getTime()) ? text : date.toISOString().slice(0, 10);
+        }
+
+        function isDateInputValid(value) {
+            return !value || /^\d{4}-\d{2}-\d{2}$/.test(value);
+        }
+
+        function openDeadlineCalendar() {
+            const deadlineInput = document.getElementById('order-deadline');
+            const calendarInput = document.getElementById('order-deadline-picker');
+            const deadline = deadlineInput.value.trim();
+
+            calendarInput.value = isDateInputValid(deadline) ? deadline : '';
+
+            if (typeof calendarInput.showPicker === 'function') {
+                calendarInput.showPicker();
+                return;
+            }
+
+            calendarInput.click();
+        }
+
+        function setDeadlineFromCalendar() {
+            document.getElementById('order-deadline').value = document.getElementById('order-deadline-picker').value;
+        }
+
         function isImageAttachment(attachment) {
             return String(attachment.type || '').startsWith('image/')
                 || String(attachment.dataUrl || '').startsWith('data:image/');
@@ -468,7 +578,7 @@
 
                         if (isImageAttachment(attachment)) {
                             return `
-                                <button type="button" onclick="openAttachmentModal('${previewId}')" class="group w-32 overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md">
+                                <button type="button" onclick="openAttachmentModal('${previewId}')" class="group w-32 max-sm:w-full overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md">
                                     <span class="block h-20 bg-gray-100">
                                         <img src="${attachment.dataUrl}" alt="${name}" class="h-full w-full object-cover transition group-hover:scale-105">
                                     </span>
@@ -479,7 +589,7 @@
                         }
 
                         return `
-                            <a href="${attachment.dataUrl}" download="${name}" class="inline-flex max-w-48 items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-blue-600 hover:border-blue-300 hover:bg-blue-50" target="_blank" rel="noopener">
+                            <a href="${attachment.dataUrl}" download="${name}" class="inline-flex max-w-48 max-sm:max-w-full items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-blue-600 hover:border-blue-300 hover:bg-blue-50" target="_blank" rel="noopener">
                                 <i class="fas fa-paperclip text-xs"></i>
                                 <span class="truncate">${name}</span>
                             </a>
@@ -537,11 +647,11 @@
             }
 
             const reviewButton = mode === 'orderer' && !proposal.review
-                ? `<button onclick="openReviewModal('${order.id}', '${proposal.id}')" class="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">Betygsätt och svara</button>`
+                ? `<button onclick="openReviewModal('${order.id}', '${proposal.id}')" class="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700 max-sm:w-full">Betygsätt och svara</button>`
                 : '';
 
             return `
-                <div class="min-w-64 space-y-3">
+                <div class="min-w-64 max-sm:min-w-0 space-y-3">
                     <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
                         <div class="text-xs font-bold uppercase tracking-wide text-emerald-700">Förslag på remiss</div>
                         <div class="mt-1 text-sm text-gray-700">${escapeHtml(proposal.note)}</div>
@@ -634,7 +744,7 @@
                     status: 'På remiss',
                     proposals: [{
                         id: `proposal-${Date.now()}`,
-                        createdAt: new Date().toISOString(),
+                        createdAt: formatDate(new Date()),
                         from: currentUser.name,
                         note,
                         attachments,
@@ -669,7 +779,7 @@
                     status: completed ? 'Avklarad' : 'Behöver ändras',
                     proposals: (order.proposals || []).map((proposal) => proposal.id === currentReviewProposalId ? {
                         ...proposal,
-                        review: { rating, response, completed, reviewedAt: new Date().toISOString() }
+                        review: { rating, response, completed, reviewedAt: formatDate(new Date()) }
                     } : proposal)
                 }));
             }
@@ -696,9 +806,9 @@
                 updateLocalOrder(orderId, (localOrder) => ({
                     ...localOrder,
                     status: 'Återöppnad',
-                    reopenedAt: new Date().toISOString(),
+                    reopenedAt: formatDate(new Date()),
                     reopenHistory: [{
-                        reopenedAt: new Date().toISOString(),
+                        reopenedAt: formatDate(new Date()),
                         note
                     }, ...(localOrder.reopenHistory || [])]
                 }));
@@ -780,7 +890,7 @@
 
         function createMenuBtn(title, icon, color, action) {
             const div = document.createElement('div');
-            div.className = `${color} p-10 rounded-2xl shadow-lg cursor-pointer transform hover:scale-105 transition text-white flex flex-col items-center space-y-4`;
+            div.className = `${color} p-10 max-sm:p-6 rounded-2xl shadow-lg cursor-pointer transform hover:scale-105 transition text-white flex flex-col items-center space-y-4 text-center`;
             div.onclick = action;
             div.innerHTML = `<i class="fas ${icon} text-4xl"></i><span class="text-xl font-bold">${title}</span>`;
             return div;
@@ -833,8 +943,9 @@
 
         async function confirmOrder() {
             const msg = document.getElementById('order-msg').value;
-            const deadline = document.getElementById('order-deadline').value;
+            const deadline = document.getElementById('order-deadline').value.trim();
             if(!msg) return alert("Skriv ett meddelande");
+            if (!isDateInputValid(deadline)) return alert("Skriv deadline som yyyy-mm-dd, till exempel 2026-06-01.");
 
             const attachments = await readSelectedAttachments();
             if (attachments === null) return;
@@ -863,6 +974,7 @@
 
             document.getElementById('order-msg').value = '';
             document.getElementById('order-deadline').value = '';
+            document.getElementById('order-deadline-picker').value = '';
             document.getElementById('order-files').value = '';
             showPage('confirmation-page');
         }
@@ -891,18 +1003,18 @@
             graphicsOrders.forEach(o => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td class="px-6 py-4 text-sm font-medium text-gray-900">${escapeHtml(o.from)}</td>
-                    <td class="px-6 py-4 text-sm text-gray-500">${escapeHtml(o.msg)}</td>
-                    <td class="px-6 py-4 text-sm">${renderAttachments(o.attachments)}</td>
-                    <td class="px-6 py-4 text-sm font-bold text-red-600">${escapeHtml(o.deadline || '-')}</td>
-                    <td class="px-6 py-4"><span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">${escapeHtml(o.status)}</span></td>
-                    <td class="px-6 py-4">
+                    <td data-label="Från" class="px-6 py-4 text-sm font-medium text-gray-900">${escapeHtml(o.from)}</td>
+                    <td data-label="Meddelande" class="px-6 py-4 text-sm text-gray-500">${escapeHtml(o.msg)}</td>
+                    <td data-label="Bilagor" class="px-6 py-4 text-sm">${renderAttachments(o.attachments)}</td>
+                    <td data-label="Deadline" class="px-6 py-4 text-sm font-bold text-red-600">${escapeHtml(formatDate(o.deadline))}</td>
+                    <td data-label="Status" class="px-6 py-4"><span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">${escapeHtml(o.status)}</span></td>
+                    <td data-label="Remiss" class="px-6 py-4">
                         <div class="space-y-3">
-                            <button onclick="openProposalModal('${o.id}')" class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">
+                            <button onclick="openProposalModal('${o.id}')" class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 max-sm:w-full">
                                 Ladda upp förslag
                             </button>
                             ${o.status === 'Avklarad' ? `
-                                <button onclick="reopenOrder('${o.id}')" class="ml-2 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-white hover:bg-amber-600">
+                                <button onclick="reopenOrder('${o.id}')" class="ml-2 max-sm:ml-0 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-white hover:bg-amber-600 max-sm:w-full">
                                     Återöppna
                                 </button>
                             ` : ''}
@@ -938,16 +1050,16 @@
             sentOrders.forEach(o => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td class="px-6 py-4 text-sm font-medium text-gray-900">${escapeHtml(o.dept)}</td>
-                    <td class="px-6 py-4 text-sm text-gray-500">${escapeHtml(o.msg)}</td>
-                    <td class="px-6 py-4 text-sm">
+                    <td data-label="Mottagare" class="px-6 py-4 text-sm font-medium text-gray-900">${escapeHtml(o.dept)}</td>
+                    <td data-label="Meddelande" class="px-6 py-4 text-sm text-gray-500">${escapeHtml(o.msg)}</td>
+                    <td data-label="Bilagor" class="px-6 py-4 text-sm">
                         <div class="space-y-4">
                             ${renderAttachments(o.attachments)}
                             ${renderProposalPanel(o, 'orderer')}
                         </div>
                     </td>
-                    <td class="px-6 py-4 text-sm font-bold text-red-600">${escapeHtml(o.deadline || '-')}</td>
-                    <td class="px-6 py-4"><span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">${escapeHtml(o.status)}</span></td>
+                    <td data-label="Deadline" class="px-6 py-4 text-sm font-bold text-red-600">${escapeHtml(formatDate(o.deadline))}</td>
+                    <td data-label="Status" class="px-6 py-4"><span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">${escapeHtml(o.status)}</span></td>
                 `;
                 tbody.appendChild(tr);
             });

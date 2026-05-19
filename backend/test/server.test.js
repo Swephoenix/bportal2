@@ -32,7 +32,18 @@ test('GET /api/health reports the backend is ready', async () => {
 
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.ok, true);
-  assert.equal(response.body.service, 'bportal-backend');
+  assert.equal(response.body.service, 'bportalen-backend');
+});
+
+test('GET /assets/b-logo.svg serves the b logo', async () => {
+  const response = await app.inject({
+    method: 'GET',
+    path: '/assets/b-logo.svg',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['content-type'], 'image/svg+xml; charset=utf-8');
+  assert.match(response.body, /<svg/);
 });
 
 test('OPTIONS /api/orders allows browser preflight requests', async () => {
@@ -84,6 +95,32 @@ test('POST /api/orders stores a new order and GET /api/orders returns it first',
   assert.equal(listed.statusCode, 200);
   assert.equal(listed.body.orders[0].id, created.body.order.id);
   assert.equal(listed.body.orders[0].msg, 'Skapa en banner till kampanjen.');
+});
+
+test('POST /api/orders stores dates in yyyy-mm-dd format', async () => {
+  const created = await request(app, 'POST', '/api/orders', {
+    from: 'Personal',
+    msg: 'Skapa en banner till kampanjen.',
+    deadline: '2026-06-01',
+    dept: 'Grafiska produktionsgruppen',
+  });
+
+  assert.equal(created.statusCode, 201);
+  assert.match(created.body.order.createdAt, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(created.body.order.deadline, '2026-06-01');
+});
+
+test('POST /api/orders rejects deadlines outside yyyy-mm-dd format', async () => {
+  const response = await request(app, 'POST', '/api/orders', {
+    from: 'Personal',
+    msg: 'Skapa en banner till kampanjen.',
+    deadline: '2026-6-1',
+    dept: 'Grafiska produktionsgruppen',
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, 'invalid_order');
+  assert.deepEqual(response.body.details, ['deadline_invalid']);
 });
 
 test('GET /api/orders can filter orders by sender', async () => {

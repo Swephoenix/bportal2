@@ -1,6 +1,6 @@
-# Bportal Backend
+# Bportalen Backend
 
-Backendserver för `index.html` i beställningsportalen.
+Backendserver för Bportalen.
 
 ## Starta
 

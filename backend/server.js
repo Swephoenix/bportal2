@@ -27,11 +27,22 @@ const DEMO_ORDERS = [
   { from: 'Marknadsavdelningen', msg: 'Ta fram 3 st olika banners för Facebook-annonsering.', deadline: '', dept: 'Grafiska produktionsgruppen', status: 'Ny' },
 ];
 
+function formatDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function isDateString(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+}
+
 function createDefaultState() {
   return {
     orders: DEMO_ORDERS.map((order) => ({
       id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
+      createdAt: formatDate(),
       ...order,
     })),
   };
@@ -97,6 +108,9 @@ function validateOrder(payload) {
 
   if (!String(payload.msg || '').trim()) details.push('msg_required');
   if (!DEPARTMENTS.includes(payload.dept)) details.push('dept_invalid');
+  if (String(payload.deadline || '').trim() && !isDateString(payload.deadline)) {
+    details.push('deadline_invalid');
+  }
   if (payload.attachments !== undefined && !Array.isArray(payload.attachments)) {
     details.push('attachments_invalid');
   }
@@ -138,7 +152,7 @@ function safeAttachments(payload) {
 function safeOrder(payload) {
   return {
     id: crypto.randomUUID(),
-    createdAt: new Date().toISOString(),
+    createdAt: formatDate(),
     from: String(payload.from || 'Okänd').trim() || 'Okänd',
     msg: String(payload.msg).trim(),
     deadline: String(payload.deadline || '').trim(),
@@ -187,7 +201,7 @@ function isImageAttachment(attachment) {
 function safeProposal(payload) {
   return {
     id: crypto.randomUUID(),
-    createdAt: new Date().toISOString(),
+    createdAt: formatDate(),
     from: String(payload.from || 'Grafikgruppen').trim() || 'Grafikgruppen',
     note: String(payload.note).trim(),
     attachments: safeAttachments(payload),
@@ -238,7 +252,7 @@ function createApp(options = {}) {
     if (method === 'GET' && url.pathname === '/api/health') {
       return json(200, {
         ok: true,
-        service: 'bportal-backend',
+        service: 'bportalen-backend',
         departments: DEPARTMENTS,
       });
     }
@@ -322,7 +336,7 @@ function createApp(options = {}) {
         rating: Number(payload.rating),
         response: String(payload.response).trim(),
         completed: payload.completed,
-        reviewedAt: new Date().toISOString(),
+        reviewedAt: formatDate(),
       };
       order.status = payload.completed ? 'Avklarad' : 'Behöver ändras';
       if (persist) saveState(state, dataFile);
@@ -341,7 +355,7 @@ function createApp(options = {}) {
       const payload = parseBody(body);
       if (!payload) return json(400, { error: 'invalid_json' });
 
-      const reopenedAt = new Date().toISOString();
+      const reopenedAt = formatDate();
       const historyEntry = {
         reopenedAt,
         note: String(payload.note || '').trim(),
@@ -358,6 +372,11 @@ function createApp(options = {}) {
     if (method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       const html = fs.readFileSync(path.join(ROOT_DIR, 'index.html'), 'utf8');
       return text(200, html, 'text/html; charset=utf-8');
+    }
+
+    if (method === 'GET' && url.pathname === '/assets/b-logo.svg') {
+      const logo = fs.readFileSync(path.join(ROOT_DIR, 'assets', 'b-logo.svg'), 'utf8');
+      return text(200, logo, 'image/svg+xml; charset=utf-8');
     }
 
     return json(404, { error: 'not_found' });
@@ -402,7 +421,7 @@ function createApp(options = {}) {
 if (require.main === module) {
   const app = createApp({ persist: true });
   app.listen(PORT, () => {
-    console.log(`Bportal backend kör på http://localhost:${PORT}`);
+    console.log(`Bportalen backend kör på http://localhost:${PORT}`);
   });
 }
 
