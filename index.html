@@ -406,11 +406,19 @@
         </div>
     </div>
 
+    <script src="ui-helpers.js"></script>
     <script>
         const departments = ["Frågor om partiet", "Valorganisation", "Grafiska produktionsgruppen", "IT-support"];
         const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:3001' : '';
         const MAX_ATTACHMENTS = 5;
         const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
+        const BportalUI = window.BportalUI || {
+            shouldShowProposalUploadButton(order, user) {
+                if (!order || !user) return false;
+                if (user.role !== 'graphics') return false;
+                return order.status !== 'Avklarad';
+            }
+        };
 
         let currentUser = null;
         let currentDeptTarget = "";
@@ -489,6 +497,12 @@
 
         function isDateInputValid(value) {
             return !value || /^\d{4}-\d{2}-\d{2}$/.test(value);
+        }
+
+        function getDefaultOrderDeadline() {
+            const date = new Date();
+            date.setDate(date.getDate() + 1);
+            return formatDate(date);
         }
 
         function openDeadlineCalendar() {
@@ -902,6 +916,7 @@
             grid.innerHTML = '';
             departments.forEach(dept => {
                 const btn = document.createElement('button');
+                btn.type = 'button';
                 btn.className = "p-4 bg-white border border-gray-200 rounded-xl hover:bg-blue-50 transition text-left flex justify-between items-center";
                 btn.innerHTML = `<span>${dept}</span> <i class="fas fa-chevron-right text-gray-300"></i>`;
                 btn.onclick = () => {
@@ -938,6 +953,8 @@
         function openOrderForm(dept) {
             currentDeptTarget = dept;
             document.getElementById('target-dept-name').innerText = "Beställning till: " + dept;
+            document.getElementById('order-deadline').value = getDefaultOrderDeadline();
+            document.getElementById('order-deadline-picker').value = document.getElementById('order-deadline').value;
             showPage('order-form-page');
         }
 
@@ -1010,9 +1027,11 @@
                     <td data-label="Status" class="px-6 py-4"><span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">${escapeHtml(o.status)}</span></td>
                     <td data-label="Remiss" class="px-6 py-4">
                         <div class="space-y-3">
-                            <button onclick="openProposalModal('${o.id}')" class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 max-sm:w-full">
-                                Ladda upp förslag
-                            </button>
+                            ${BportalUI.shouldShowProposalUploadButton(o, currentUser) ? `
+                                <button onclick="openProposalModal('${o.id}')" class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 max-sm:w-full">
+                                    Ladda upp förslag
+                                </button>
+                            ` : ''}
                             ${o.status === 'Avklarad' ? `
                                 <button onclick="reopenOrder('${o.id}')" class="ml-2 max-sm:ml-0 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-white hover:bg-amber-600 max-sm:w-full">
                                     Återöppna

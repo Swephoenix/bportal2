@@ -379,6 +379,11 @@ function createApp(options = {}) {
       return text(200, logo, 'image/svg+xml; charset=utf-8');
     }
 
+    if (method === 'GET' && url.pathname === '/ui-helpers.js') {
+      const helpers = fs.readFileSync(path.join(ROOT_DIR, 'ui-helpers.js'), 'utf8');
+      return text(200, helpers, 'application/javascript; charset=utf-8');
+    }
+
     return json(404, { error: 'not_found' });
   }
 
