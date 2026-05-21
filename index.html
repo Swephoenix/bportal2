@@ -76,6 +76,24 @@
                 border-top: 1px solid #eef2f7;
             }
         }
+
+        .fade-in {
+            animation: fadeIn 0.35s ease-out forwards;
+        }
+
+        .slide-up {
+            animation: slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(16px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -133,23 +151,44 @@
             <i class="fas fa-arrow-left mr-2"></i> Tillbaka till menyn
         </button>
         <h2 class="mobile-title text-3xl font-bold mb-8 text-center text-gray-800">Hur vill du fortsätta?</h2>
-        
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div onclick="showDepartments()" class="mobile-card bg-white p-10 rounded-2xl shadow border border-gray-200 cursor-pointer transform hover:-translate-y-1 hover:shadow-xl transition flex flex-col items-center text-center group">
-                <div class="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-6 group-hover:bg-blue-600 group-hover:text-white transition">
-                    <i class="fas fa-sitemap text-3xl"></i>
+        <div class="mx-auto max-w-5xl overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl shadow-slate-100">
+            <div class="p-6 md:p-8">
+                <div class="mb-6">
+                    <span class="text-xs font-bold uppercase tracking-wider text-indigo-600">AI-Assistent</span>
+                    <h3 class="mt-1 text-2xl font-semibold text-slate-900">Chatta med AI</h3>
+                    <p class="mt-1 text-sm text-slate-600">Beskriv ditt ärende kortfattat så vägleder jag dig till rätt avdelning.</p>
                 </div>
-                <h3 class="text-xl font-bold text-gray-800 mb-2">Jag vet vilken avdelning jag ska beställa av</h3>
-                <p class="text-gray-500">Gå direkt till listan över alla avdelningar och välj rätt mottagare.</p>
-            </div>
-
-            <div onclick="showGuide()" class="mobile-card bg-white p-10 rounded-2xl shadow border border-gray-200 cursor-pointer transform hover:-translate-y-1 hover:shadow-xl transition flex flex-col items-center text-center group">
-                <div class="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6 group-hover:bg-emerald-600 group-hover:text-white transition">
-                    <i class="fas fa-compass text-3xl"></i>
+                <div id="ai-chat-log" class="space-y-4 max-h-[320px] overflow-y-auto pr-2">
+                    <div class="flex gap-3 fade-in">
+                        <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-100">🤖</div>
+                        <div class="max-w-[85%] rounded-2xl rounded-tl-none bg-slate-50 p-4 text-sm text-slate-700 shadow-sm">
+                            Hej! Beskriv kort vad ditt ärende gäller så hjälper jag dig att hitta rätt väg. Du kan till exempel skriva om det gäller bild, IT, valarbete eller något annat internt ärende.
+                        </div>
+                    </div>
                 </div>
-                <h3 class="text-xl font-bold text-gray-800 mb-2">Jag vet inte vilken avdelning som ska hantera min beställning</h3>
-                <p class="text-gray-500">Få hjälp genom en snabb guide för att hitta rätt avdelning för ditt ärende.</p>
+                <form onsubmit="sendAIMessage(event)" class="mt-6 border-t border-slate-100 pt-4">
+                    <div class="relative flex items-center gap-3">
+                        <input id="ai-chat-input" type="text" autocomplete="off" class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20" placeholder="Skriv till AI...">
+                        <button type="submit" class="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700">
+                            Skicka
+                        </button>
+                    </div>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <span class="rounded bg-slate-100 px-2 py-1 text-xs text-slate-500">Flyer / banner</span>
+                        <span class="rounded bg-slate-100 px-2 py-1 text-xs text-slate-500">IT-problem</span>
+                        <span class="rounded bg-slate-100 px-2 py-1 text-xs text-slate-500">Valarbete</span>
+                    </div>
+                </form>
             </div>
+        </div>
+        <div class="mt-8 text-center">
+            <button id="ai-chat-continue" type="button" onclick="continueFromAIChat()" class="mb-4 hidden w-full max-w-xl rounded-2xl bg-emerald-500 px-4 py-3 font-bold text-white transition hover:bg-emerald-400">
+                Gå vidare till beställning
+            </button>
+            <button type="button" onclick="showDepartments()" class="mx-auto flex w-full max-w-xl items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-6 py-4 text-sm font-medium text-white shadow-lg shadow-indigo-100 transition hover:-translate-y-0.5 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 hover:shadow-xl hover:shadow-indigo-200">
+                <i class="fas fa-plus text-sm"></i>
+                Gör manuell beställning
+            </button>
         </div>
     </section>
 
@@ -413,6 +452,11 @@
         const MAX_ATTACHMENTS = 5;
         const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
         const BportalUI = window.BportalUI || {
+            getDefaultOrderDeadline() {
+                const date = new Date();
+                date.setDate(date.getDate() + 1);
+                return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            },
             shouldShowProposalUploadButton(order, user) {
                 if (!order || !user) return false;
                 if (user.role !== 'graphics') return false;
@@ -423,6 +467,8 @@
         let currentUser = null;
         let currentDeptTarget = "";
         let recommendedDept = "";
+        let currentChatSuggestedDept = "";
+        let aiChatHistory = [];
         let currentProposalOrderId = "";
         let currentReviewOrderId = "";
         let currentReviewProposalId = "";
@@ -924,6 +970,144 @@
                 };
                 grid.appendChild(btn);
             });
+        }
+
+        function appendAIChatMessage(role, text, action = null) {
+            const log = document.getElementById('ai-chat-log');
+            const row = document.createElement('div');
+            const isUser = role === 'user';
+            row.className = `flex gap-3 ${isUser ? 'justify-end' : ''} fade-in`;
+            const safeText = escapeHtml(text).replace(/\n/g, '<br>');
+            if (isUser) {
+                row.innerHTML = `
+                    <div class="max-w-[85%] rounded-2xl rounded-tr-none bg-indigo-600 p-4 text-sm text-white shadow-sm">
+                        ${safeText}
+                    </div>
+                    <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-medium text-indigo-700">
+                        DU
+                    </div>
+                `;
+            } else {
+                const bubble = document.createElement('div');
+                bubble.className = 'max-w-[85%] rounded-2xl rounded-tl-none bg-slate-50 p-4 text-sm text-slate-700 shadow-sm';
+                bubble.innerHTML = `<div>${safeText}</div>`;
+
+                if (action && action.department) {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'mt-3 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-semibold text-indigo-600 border border-indigo-100 shadow-sm transition hover:bg-slate-100';
+                    button.textContent = action.label || `Välj ${action.department}`;
+                    button.onclick = () => openOrderForm(action.department);
+                    bubble.appendChild(button);
+                }
+
+                row.innerHTML = `
+                    <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-100">
+                        🤖
+                    </div>
+                `;
+                row.appendChild(bubble);
+            }
+            log.appendChild(row);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function addAIChatMessage(role, text, action = null, trackHistory = true, historyText = null) {
+            if (trackHistory) {
+                aiChatHistory.push({ role, content: historyText || text });
+            }
+            appendAIChatMessage(role, text, action);
+        }
+
+        function refreshAIChatContinueButton() {
+            const button = document.getElementById('ai-chat-continue');
+            if (!button) return;
+
+            if (currentChatSuggestedDept) {
+                button.textContent = `Gå vidare till ${currentChatSuggestedDept}`;
+                button.classList.remove('hidden');
+            } else {
+                button.classList.add('hidden');
+            }
+        }
+
+        function resetAIChat() {
+            currentChatSuggestedDept = '';
+            aiChatHistory = [];
+            const log = document.getElementById('ai-chat-log');
+            log.innerHTML = '';
+            refreshAIChatContinueButton();
+        }
+
+        function showAIChat() {
+            showPage('choose-path-page');
+            resetAIChat();
+            const input = document.getElementById('ai-chat-input');
+            input.value = '';
+            input.focus();
+        }
+
+        function sendAIQuickPrompt(text) {
+            showPage('choose-path-page');
+            resetAIChat();
+            document.getElementById('ai-chat-input').value = text;
+            sendAIMessage();
+        }
+
+        async function sendAIMessage(event) {
+            if (event) event.preventDefault();
+
+            const input = document.getElementById('ai-chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+
+            addAIChatMessage('user', text);
+            input.value = '';
+
+            let result = null;
+            try {
+                result = await apiRequest('/api/ai/suggest', {
+                    method: 'POST',
+                    body: JSON.stringify({ messages: aiChatHistory })
+                });
+            } catch (error) {
+                console.error(error);
+                currentChatSuggestedDept = '';
+                refreshAIChatContinueButton();
+                return;
+            }
+
+            const suggestion = result && result.suggestion;
+            if (suggestion && suggestion.department) {
+                currentChatSuggestedDept = suggestion.department;
+                const departmentLine = `Jag tror att det här hör till ${suggestion.department}.`;
+                const visibleText = departmentLine;
+                const historyParts = [departmentLine];
+                if (suggestion.reason) historyParts.push(`Motivering: ${suggestion.reason}`);
+                if (result.reply) historyParts.push(result.reply);
+                const historyText = historyParts.join(' ');
+                addAIChatMessage(
+                    'assistant',
+                    visibleText,
+                    { label: `Välj ${suggestion.department}`, department: suggestion.department },
+                    true,
+                    historyText
+                );
+            } else if (result && result.reply) {
+                currentChatSuggestedDept = '';
+                addAIChatMessage('assistant', result.reply, null, true, result.reply);
+            }
+
+            refreshAIChatContinueButton();
+        }
+
+        function continueFromAIChat() {
+            if (currentChatSuggestedDept) {
+                openOrderForm(currentChatSuggestedDept);
+                return;
+            }
+
+            showDepartments();
         }
 
         // --- GUIDE LOGIK ---

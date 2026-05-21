@@ -6,6 +6,9 @@ const crypto = require('node:crypto');
 const PORT = Number(process.env.PORT || 3001);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const DATA_FILE = process.env.BPORTAL_DATA_FILE || path.join(__dirname, 'data', 'orders.json');
+const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'granite4.1:3b';
+const OLLAMA_NUM_CTX = Number(process.env.OLLAMA_NUM_CTX || 30000);
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
 
@@ -229,6 +232,178 @@ function findProposal(order, proposalId) {
     : null;
 }
 
+function normalizeDepartmentName(value) {
+  const text = String(value || '').trim().toLowerCase();
+  return DEPARTMENTS.find((department) => department.toLowerCase() === text) || null;
+}
+
+function extractAiSuggestion(content) {
+  if (!content) return null;
+
+  const text = String(content).trim();
+
+  try {
+    const parsed = JSON.parse(text);
+    const department = normalizeDepartmentName(parsed.department);
+    return {
+      department,
+      reason: String(parsed.reason || '').trim(),
+      confidence: Number(parsed.confidence || 0),
+      reply: String(parsed.reply || '').trim(),
+    };
+  } catch {
+    const commandMatch = text.match(/\[\[\s*recommend\s+department="([^"]+)"(?:\s+confidence="([^"]+)")?(?:\s+reason="([^"]*)")?\s*\]\]?\s*$/i);
+    if (commandMatch) {
+      const department = normalizeDepartmentName(commandMatch[1]);
+      const reply = text.slice(0, commandMatch.index).trim();
+      return {
+        department,
+        reason: String(commandMatch[3] || '').trim() || reply,
+        confidence: Number(commandMatch[2] || 0),
+        reply,
+      };
+    }
+
+    const contentText = text.toLowerCase();
+    const department = DEPARTMENTS.find((entry) => contentText.includes(entry.toLowerCase()));
+    return {
+      department: department || null,
+      reason: department ? text : '',
+      confidence: department ? 0.5 : 0,
+      reply: department ? '' : text,
+    };
+  }
+}
+
+function buildAiPrompt() {
+  return [
+    'Du är en fri chattassistent i en beställningsportal.',
+    'Du pratar med användaren som en hjälpsam människa, inte som ett formulär.',
+    `Tillåtna avdelningar: ${DEPARTMENTS.join(', ')}.`,
+    'Svara fritt och naturligt på svenska. Du får småprata, svara på vardaglig fråga eller vardagliga frågor, ställa följdfrågor och vara konversationsmässig.',
+    'Om användaren småpratar får du svara naturligt och kort.',
+    'Ditt huvudmål är att hjälpa användaren vidare och, när det passar, rekommendera en avdelning av de tillåtna.',
+    'Om du redan kan avgöra rätt avdelning, ställ inga följdfrågor. Säg det kort och vänligt i vanlig text och lägg sedan till exakt en kommando-rad på egen rad i slutet av svaret.',
+    'Om användaren frågar varför du föreslog en avdelning, svara kort med motiveringen i vanlig text och rekommendera bara igen om det fortfarande är relevant.',
+    'När du vill rekommendera en avdelning, lägg till exakt en kommando-rad på egen rad i slutet av svaret:',
+    '[[recommend department="Grafiska produktionsgruppen" confidence="0.93" reason="Kort motivering"]]',
+    'Byt ut department till en av de tillåtna avdelningarna och använd confidence mellan 0 och 1.',
+    'Om du inte vill rekommendera någon avdelning, skriv bara vanlig text utan kommando.',
+    'Exempel:',
+    'Användare: Jag behöver hjälp med en banner.',
+    'Assistent: Det låter som att detta hör till Grafiska produktionsgruppen.',
+    '[[recommend department="Grafiska produktionsgruppen" confidence="0.94" reason="Det gäller en banner."]]',
+    'Användare: Hur mår du?',
+    'Assistent: Jag mår bra, tack! Hur kan jag hjälpa dig vidare?',
+  ].join('\n');
+}
+
+function normalizeAiMessages(payload) {
+  const explicitMessages = Array.isArray(payload && payload.messages) ? payload.messages : [];
+  const normalized = explicitMessages
+    .filter((message) => message && typeof message === 'object')
+    .map((message) => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: String(message.content || '').trim(),
+    }))
+    .filter((message) => message.content);
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  const text = String(payload && (payload.message || payload.text) || '').trim();
+  return text ? [{ role: 'user', content: text }] : [];
+}
+
+function latestUserMessage(messages) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === 'user' && messages[index].content) {
+      return messages[index].content;
+    }
+  }
+
+  return '';
+}
+
+async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch, model = OLLAMA_MODEL } = {}) {
+  if (typeof fetchFn !== 'function') {
+    return {
+      suggestion: null,
+      availableDepartments: DEPARTMENTS,
+      model,
+      source: 'none',
+      error: 'ollama_unavailable',
+    };
+  }
+
+  try {
+    const response = await fetchFn(`${OLLAMA_BASE_URL}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        stream: false,
+        messages: [
+          { role: 'system', content: buildAiPrompt() },
+          ...messages,
+        ],
+        options: {
+          temperature: 0.1,
+          num_ctx: OLLAMA_NUM_CTX,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`ollama_http_${response.status}`);
+    }
+
+    const data = await response.json();
+    const suggestion = extractAiSuggestion(data && data.message && data.message.content);
+    if (suggestion && suggestion.department) {
+      const reply = String(suggestion.reply || '').trim();
+      return {
+        suggestion: {
+          ...suggestion,
+          source: 'ollama',
+        },
+        reply,
+        availableDepartments: DEPARTMENTS,
+        model,
+        source: 'ollama',
+      };
+    }
+
+    if (suggestion && suggestion.reply) {
+      return {
+        suggestion: null,
+        reply: suggestion.reply,
+        availableDepartments: DEPARTMENTS,
+        model,
+        source: 'ollama',
+      };
+    }
+  } catch (error) {
+    return {
+      suggestion: null,
+      availableDepartments: DEPARTMENTS,
+      model,
+      source: 'none',
+      error: error.message,
+    };
+  }
+
+  return {
+    suggestion: null,
+    availableDepartments: DEPARTMENTS,
+    model,
+    source: 'none',
+  };
+}
+
 function createApp(options = {}) {
   const state = options.state || loadState(options.dataFile);
   const dataFile = options.dataFile || DATA_FILE;
@@ -294,6 +469,23 @@ function createApp(options = {}) {
       if (persist) saveState(state, dataFile);
 
       return json(201, { order });
+    }
+
+    if (method === 'POST' && url.pathname === '/api/ai/suggest') {
+    const payload = parseBody(body);
+    if (!payload) return json(400, { error: 'invalid_json' });
+
+      const messages = normalizeAiMessages(payload);
+      if (messages.length === 0) {
+        return json(400, { error: 'message_required' });
+      }
+
+      const result = await getAiDepartmentSuggestion(messages, {
+        fetchFn: options.ollamaFetch || globalThis.fetch?.bind(globalThis),
+        model: options.ollamaModel || OLLAMA_MODEL,
+      });
+
+      return json(200, result);
     }
 
     const proposalMatch = url.pathname.match(/^\/api\/orders\/([^/]+)\/proposals$/);

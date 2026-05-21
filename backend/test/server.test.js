@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { test, beforeEach } = require('node:test');
+const { test } = require('node:test');
 
 const { createApp, createDefaultState } = require('../server');
 
@@ -21,13 +21,12 @@ async function request(app, method, path, body) {
   };
 }
 
-let app;
-
-beforeEach(() => {
-  app = createApp({ state: createDefaultState() });
-});
+function freshApp() {
+  return createApp({ state: createDefaultState() });
+}
 
 test('GET /api/health reports the backend is ready', async () => {
+  const app = freshApp();
   const response = await request(app, 'GET', '/api/health');
 
   assert.equal(response.statusCode, 200);
@@ -36,6 +35,7 @@ test('GET /api/health reports the backend is ready', async () => {
 });
 
 test('GET /assets/b-logo.svg serves the b logo', async () => {
+  const app = freshApp();
   const response = await app.inject({
     method: 'GET',
     path: '/assets/b-logo.svg',
@@ -47,6 +47,7 @@ test('GET /assets/b-logo.svg serves the b logo', async () => {
 });
 
 test('OPTIONS /api/orders allows browser preflight requests', async () => {
+  const app = freshApp();
   const response = await app.inject({
     method: 'OPTIONS',
     path: '/api/orders',
@@ -58,6 +59,7 @@ test('OPTIONS /api/orders allows browser preflight requests', async () => {
 });
 
 test('POST /api/login accepts the orderer demo account', async () => {
+  const app = freshApp();
   const response = await request(app, 'POST', '/api/login', {
     username: 'user',
     password: 'user',
@@ -68,6 +70,7 @@ test('POST /api/login accepts the orderer demo account', async () => {
 });
 
 test('POST /api/login rejects invalid credentials', async () => {
+  const app = freshApp();
   const response = await request(app, 'POST', '/api/login', {
     username: 'user',
     password: 'wrong',
@@ -78,6 +81,7 @@ test('POST /api/login rejects invalid credentials', async () => {
 });
 
 test('POST /api/orders stores a new order and GET /api/orders returns it first', async () => {
+  const app = freshApp();
   const created = await request(app, 'POST', '/api/orders', {
     from: 'Personal',
     msg: 'Skapa en banner till kampanjen.',
@@ -98,6 +102,7 @@ test('POST /api/orders stores a new order and GET /api/orders returns it first',
 });
 
 test('POST /api/orders stores dates in yyyy-mm-dd format', async () => {
+  const app = freshApp();
   const created = await request(app, 'POST', '/api/orders', {
     from: 'Personal',
     msg: 'Skapa en banner till kampanjen.',
@@ -111,6 +116,7 @@ test('POST /api/orders stores dates in yyyy-mm-dd format', async () => {
 });
 
 test('POST /api/orders rejects deadlines outside yyyy-mm-dd format', async () => {
+  const app = freshApp();
   const response = await request(app, 'POST', '/api/orders', {
     from: 'Personal',
     msg: 'Skapa en banner till kampanjen.',
@@ -124,6 +130,7 @@ test('POST /api/orders rejects deadlines outside yyyy-mm-dd format', async () =>
 });
 
 test('GET /api/orders can filter orders by sender', async () => {
+  const app = freshApp();
   const personal = await request(app, 'POST', '/api/orders', {
     from: 'Personal',
     msg: 'Min skickade beställning.',
@@ -144,6 +151,7 @@ test('GET /api/orders can filter orders by sender', async () => {
 });
 
 test('POST /api/orders stores file attachments with safe metadata', async () => {
+  const app = freshApp();
   const created = await request(app, 'POST', '/api/orders', {
     from: 'Personal',
     msg: 'Använd bifogad logotyp.',
@@ -173,6 +181,7 @@ test('POST /api/orders stores file attachments with safe metadata', async () => 
 });
 
 test('POST /api/orders requires a message and valid department', async () => {
+  const app = freshApp();
   const response = await request(app, 'POST', '/api/orders', {
     from: 'Personal',
     msg: '',
@@ -186,6 +195,7 @@ test('POST /api/orders requires a message and valid department', async () => {
 });
 
 test('POST /api/orders rejects too many attachments', async () => {
+  const app = freshApp();
   const response = await request(app, 'POST', '/api/orders', {
     from: 'Personal',
     msg: 'För många filer.',
@@ -205,6 +215,7 @@ test('POST /api/orders rejects too many attachments', async () => {
 });
 
 test('POST /api/orders/:id/proposals adds image proposals and puts the order on review', async () => {
+  const app = freshApp();
   const created = await request(app, 'POST', '/api/orders', {
     from: 'Personal',
     msg: 'Ta fram två kampanjbilder.',
@@ -232,6 +243,7 @@ test('POST /api/orders/:id/proposals adds image proposals and puts the order on 
 });
 
 test('POST /api/orders/:id/review stores the orderer review and completion choice', async () => {
+  const app = freshApp();
   const created = await request(app, 'POST', '/api/orders', {
     from: 'Personal',
     msg: 'Ta fram kampanjbild.',
@@ -270,6 +282,7 @@ test('POST /api/orders/:id/review stores the orderer review and completion choic
 });
 
 test('POST /api/orders/:id/reopen lets graphics reopen a completed order', async () => {
+  const app = freshApp();
   const created = await request(app, 'POST', '/api/orders', {
     from: 'Personal',
     msg: 'Ta fram kampanjbild.',
@@ -303,4 +316,212 @@ test('POST /api/orders/:id/reopen lets graphics reopen a completed order', async
   assert.equal(response.body.order.status, 'Återöppnad');
   assert.equal(response.body.order.reopenedAt, response.body.order.reopenHistory[0].reopenedAt);
   assert.deepEqual(response.body.order.reopenHistory[0].note, 'Behöver göra en sista justering.');
+});
+
+test('POST /api/ai/suggest returns an AI department suggestion for the chat harness', async () => {
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async () => ({
+      ok: true,
+      json: async () => ({
+        message: {
+          content: JSON.stringify({
+            department: 'Grafiska produktionsgruppen',
+            reason: 'Det handlar om en banner.',
+            confidence: 0.96,
+          }),
+        },
+      }),
+    }),
+  });
+
+  const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Vi behöver en banner till kampanjen.',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.suggestion.department, 'Grafiska produktionsgruppen');
+  assert.equal(response.body.suggestion.reason, 'Det handlar om en banner.');
+  assert.equal(response.body.availableDepartments.includes('Grafiska produktionsgruppen'), true);
+});
+
+test('POST /api/ai/suggest forwards previous chat messages to Ollama', async () => {
+  let capturedBody = null;
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async (_url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => ({
+          message: {
+            content: JSON.stringify({
+              department: 'IT-support',
+              reason: 'Tidigare meddelanden nämner dator och inloggning.',
+              confidence: 0.88,
+            }),
+          },
+        }),
+      };
+    },
+  });
+
+  const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+    messages: [
+      { role: 'user', content: 'Först behöver jag hjälp med kampanjen.' },
+      { role: 'assistant', content: 'Okej, berätta mer.' },
+      { role: 'user', content: 'Nu gäller det inloggningen på datorn.' },
+    ],
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(capturedBody.messages.some((message) => message.content.includes('kampanjen')), true);
+  assert.equal(capturedBody.messages.some((message) => message.content.includes('inloggningen på datorn')), true);
+  assert.equal(capturedBody.options.num_ctx, 30000);
+  assert.equal(capturedBody.format, undefined);
+  assert.equal(response.body.suggestion.department, 'IT-support');
+});
+
+test('POST /api/ai/suggest uses a free-chat prompt with recommendation commands', async () => {
+  let capturedBody = null;
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async (_url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => ({
+          message: {
+            content: JSON.stringify({
+              department: 'Grafiska produktionsgruppen',
+              reason: 'Det gäller en grafisk beställning.',
+              confidence: 0.91,
+            }),
+          },
+        }),
+      };
+    },
+  });
+
+  await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Vi behöver en banner till kampanjen.',
+  });
+
+  assert.match(capturedBody.messages[0].content, /fri chattassistent/i);
+  assert.match(capturedBody.messages[0].content, /hjälpsam människa/i);
+  assert.match(capturedBody.messages[0].content, /huvudmål/i);
+  assert.match(capturedBody.messages[0].content, /kommando-rad/i);
+  assert.match(capturedBody.messages[0].content, /exempel/i);
+  assert.match(capturedBody.messages[0].content, /banner/i);
+});
+
+test('POST /api/ai/suggest can return a friendly reply without a department', async () => {
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async () => ({
+      ok: true,
+      json: async () => ({
+        message: {
+          content: 'Jag mår bra, tack! Hur kan jag hjälpa dig i dag?',
+        },
+      }),
+    }),
+  });
+
+  const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Hur mår du?',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.suggestion, null);
+  assert.equal(response.body.reply, 'Jag mår bra, tack! Hur kan jag hjälpa dig i dag?');
+});
+
+test('POST /api/ai/suggest allows casual conversation in the system prompt', async () => {
+  let capturedBody = null;
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async (_url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => ({
+          message: {
+            content: 'Jag mår bra och är redo att hjälpa dig.',
+          },
+        }),
+      };
+    },
+  });
+
+  await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Hur mår du?',
+  });
+
+  assert.ok(capturedBody && Array.isArray(capturedBody.messages));
+  assert.ok(capturedBody.messages[0].content.includes('vardaglig fråga'));
+  assert.ok(capturedBody.messages[0].content.includes('småpratar'));
+});
+
+test('POST /api/ai/suggest extracts a department command from free-form chat', async () => {
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async () => ({
+      ok: true,
+      json: async () => ({
+        message: {
+          content: 'Det låter som en grafisk beställning.\n[[recommend department="Grafiska produktionsgruppen" confidence="0.91" reason="Det gäller en banner."]]',
+        },
+      }),
+    }),
+  });
+
+  const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Vi behöver en banner till kampanjen.',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.suggestion.department, 'Grafiska produktionsgruppen');
+  assert.equal(response.body.suggestion.reason, 'Det gäller en banner.');
+  assert.equal(response.body.reply, 'Det låter som en grafisk beställning.');
+});
+
+test('POST /api/ai/suggest accepts a slightly malformed department command at the end', async () => {
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async () => ({
+      ok: true,
+      json: async () => ({
+        message: {
+          content: 'Jag tror att det här är en grafisk sak.\n[[recommend department="Grafiska produktionsgruppen" confidence="0.85" reason="Det gäller en bild."]',
+        },
+      }),
+    }),
+  });
+
+  const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Jag skulle vilja beställa någon bild',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.suggestion.department, 'Grafiska produktionsgruppen');
+  assert.equal(response.body.reply, 'Jag tror att det här är en grafisk sak.');
+});
+
+test('POST /api/ai/suggest returns no suggestion if Ollama fails', async () => {
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async () => {
+      throw new Error('ollama unavailable');
+    },
+  });
+
+  const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Vi behöver en flyer och en banner till kampanjen.',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.suggestion, null);
+  assert.equal(response.body.reply, undefined);
+  assert.equal(response.body.error, 'ollama unavailable');
 });
