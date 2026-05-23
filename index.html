@@ -94,6 +94,23 @@
             from { transform: translateY(16px); opacity: 0; }
             to { transform: translateY(0); opacity: 1; }
         }
+
+        @keyframes thinkingDot {
+            0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
+            40% { transform: translateY(-4px); opacity: 1; }
+        }
+
+        .thinking-dots span {
+            animation: thinkingDot 1.2s infinite ease-in-out;
+        }
+
+        .thinking-dots span:nth-child(2) {
+            animation-delay: 0.15s;
+        }
+
+        .thinking-dots span:nth-child(3) {
+            animation-delay: 0.3s;
+        }
     </style>
 </head>
 <body>
@@ -117,8 +134,8 @@
         <div class="glass-card mobile-card p-8 rounded-2xl shadow-2xl w-full max-w-md">
             <div class="text-center mb-8">
                 <img src="assets/b-logo.svg" alt="b" class="login-logo">
+                <p class="text-gray-500 mb-2">portalen</p>
                 <h1 class="text-3xl font-bold text-gray-800">Logga in</h1>
-                <p class="text-gray-500 mt-2">portalen</p>
             </div>
             <form onsubmit="login(event)" class="space-y-4">
                 <div>
@@ -155,7 +172,13 @@
             <div class="p-6 md:p-8">
                 <div class="mb-6">
                     <span class="text-xs font-bold uppercase tracking-wider text-indigo-600">AI-Assistent</span>
-                    <h3 class="mt-1 text-2xl font-semibold text-slate-900">Chatta med AI</h3>
+                    <div class="mt-1 flex flex-wrap items-center justify-between gap-3">
+                        <h3 class="text-2xl font-semibold text-slate-900">Chatta med AI</h3>
+                        <span id="ai-status-badge" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
+                            <span class="h-2 w-2 rounded-full bg-slate-300"></span>
+                            Kontrollerar AI
+                        </span>
+                    </div>
                     <p class="mt-1 text-sm text-slate-600">Beskriv ditt ärende kortfattat så vägleder jag dig till rätt avdelning.</p>
                 </div>
                 <div id="ai-chat-log" class="space-y-4 max-h-[320px] overflow-y-auto pr-2">
@@ -172,6 +195,9 @@
                         <button type="submit" class="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700">
                             Skicka
                         </button>
+                        <button id="ai-stop-button" type="button" onclick="stopAIMessage()" class="hidden rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm font-medium text-rose-600 shadow-sm transition hover:bg-rose-50">
+                            Stoppa
+                        </button>
                     </div>
                     <div class="mt-2 flex flex-wrap gap-2">
                         <span class="rounded bg-slate-100 px-2 py-1 text-xs text-slate-500">Flyer / banner</span>
@@ -182,9 +208,6 @@
             </div>
         </div>
         <div class="mt-8 text-center">
-            <button id="ai-chat-continue" type="button" onclick="continueFromAIChat()" class="mb-4 hidden w-full max-w-xl rounded-2xl bg-emerald-500 px-4 py-3 font-bold text-white transition hover:bg-emerald-400">
-                Gå vidare till beställning
-            </button>
             <button type="button" onclick="showDepartments()" class="mx-auto flex w-full max-w-xl items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-6 py-4 text-sm font-medium text-white shadow-lg shadow-indigo-100 transition hover:-translate-y-0.5 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 hover:shadow-xl hover:shadow-indigo-200">
                 <i class="fas fa-plus text-sm"></i>
                 Gör manuell beställning
@@ -466,7 +489,6 @@
         </div>
     </div>
 
-    <script src="ui-helpers.js"></script>
     <script>
         const defaultDepartments = [
             "Frågor om partiet",
@@ -521,6 +543,14 @@
                 return order.status !== 'Avklarad';
             },
             getOrderFormBackConfig(source) {
+                if (source === 'ai') {
+                    return {
+                        icon: 'fa-arrow-left',
+                        label: 'Tillbaka till chatten',
+                        targetPage: 'choose-path-page',
+                    };
+                }
+
                 if (source === 'manual') {
                     return {
                         icon: 'fa-arrow-left',
@@ -543,6 +573,10 @@
         let recommendedDept = "";
         let currentChatSuggestedDept = "";
         let aiChatHistory = [];
+        let aiThinkingRow = null;
+        let aiStreamingAssistant = null;
+        let aiChatAbortController = null;
+        let aiResponseTimer = null;
         let currentProposalOrderId = "";
         let currentReviewOrderId = "";
         let currentReviewProposalId = "";
@@ -1245,6 +1279,304 @@
             log.scrollTop = log.scrollHeight;
         }
 
+        function setAIChatBusy(isBusy) {
+            const input = document.getElementById('ai-chat-input');
+            const button = document.querySelector('form[onsubmit="sendAIMessage(event)"] button[type="submit"]');
+            const stopButton = document.getElementById('ai-stop-button');
+            if (input) input.disabled = isBusy;
+            if (button) {
+                button.disabled = isBusy;
+                button.classList.toggle('opacity-70', isBusy);
+                button.classList.toggle('cursor-wait', isBusy);
+            }
+            if (stopButton) {
+                stopButton.classList.toggle('hidden', !isBusy);
+                stopButton.disabled = !isBusy;
+            }
+        }
+
+        function setAIStatusBadge(status, detail = '') {
+            const badge = document.getElementById('ai-status-badge');
+            if (!badge) return;
+
+            const config = {
+                checking: {
+                    text: 'Kontrollerar AI',
+                    badgeClass: 'border-slate-200 bg-slate-50 text-slate-500',
+                    dotClass: 'bg-slate-300',
+                },
+                warm: {
+                    text: 'AI uppvärmd',
+                    badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                    dotClass: 'bg-emerald-500',
+                },
+                cold: {
+                    text: 'AI kallstart',
+                    badgeClass: 'border-amber-200 bg-amber-50 text-amber-700',
+                    dotClass: 'bg-amber-500',
+                },
+                starting: {
+                    text: 'AI startar',
+                    badgeClass: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+                    dotClass: 'bg-indigo-500 animate-pulse',
+                },
+                offline: {
+                    text: 'AI offline',
+                    badgeClass: 'border-rose-200 bg-rose-50 text-rose-700',
+                    dotClass: 'bg-rose-500',
+                },
+            }[status] || {
+                text: 'AI okänd',
+                badgeClass: 'border-slate-200 bg-slate-50 text-slate-500',
+                dotClass: 'bg-slate-300',
+            };
+
+            badge.className = `inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${config.badgeClass}`;
+            badge.innerHTML = `<span class="h-2 w-2 rounded-full ${config.dotClass}"></span>${escapeHtml(detail || config.text)}`;
+        }
+
+        async function refreshAIStatusBadge() {
+            setAIStatusBadge('checking');
+            try {
+                const result = await apiRequest('/api/ai/status');
+                setAIStatusBadge(result.status === 'warm' ? 'warm' : result.status === 'cold' ? 'cold' : 'offline');
+            } catch (error) {
+                setAIStatusBadge('offline');
+            }
+        }
+
+        function formatAIResponseDuration(milliseconds) {
+            const seconds = Math.max(0, milliseconds) / 1000;
+            return `${seconds.toFixed(seconds < 10 ? 1 : 0).replace('.', ',')} s`;
+        }
+
+        function updateAIResponseTimer(label = 'Svarar') {
+            if (!aiResponseTimer) return;
+            const elapsed = Date.now() - aiResponseTimer.startedAt;
+            const text = `${label}: ${formatAIResponseDuration(elapsed)}`;
+            aiResponseTimer.elements.forEach((element) => {
+                if (element && element.isConnected) {
+                    element.textContent = text;
+                }
+            });
+        }
+
+        function registerAIResponseTimerElement(element) {
+            if (!element || !aiResponseTimer) return;
+            aiResponseTimer.elements.push(element);
+            updateAIResponseTimer();
+        }
+
+        function startAIResponseTimer() {
+            if (aiResponseTimer && aiResponseTimer.intervalId) {
+                clearInterval(aiResponseTimer.intervalId);
+            }
+            aiResponseTimer = {
+                startedAt: Date.now(),
+                intervalId: null,
+                elements: [],
+            };
+            aiResponseTimer.intervalId = setInterval(() => updateAIResponseTimer(), 100);
+        }
+
+        function finishAIResponseTimer(label = 'Svarstid') {
+            if (!aiResponseTimer) return;
+            if (aiResponseTimer.intervalId) {
+                clearInterval(aiResponseTimer.intervalId);
+                aiResponseTimer.intervalId = null;
+            }
+            updateAIResponseTimer(label);
+            aiResponseTimer.elements = aiResponseTimer.elements.filter((element) => element && element.isConnected);
+        }
+
+        function clearAIResponseTimer() {
+            if (aiResponseTimer && aiResponseTimer.intervalId) {
+                clearInterval(aiResponseTimer.intervalId);
+            }
+            aiResponseTimer = null;
+        }
+
+        function showAIThinkingMessage() {
+            if (aiThinkingRow) return;
+
+            const log = document.getElementById('ai-chat-log');
+            const row = document.createElement('div');
+            row.id = 'ai-thinking-message';
+            row.className = 'flex gap-3 fade-in';
+            row.innerHTML = `
+                <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-100">
+                    🤖
+                </div>
+                <div class="max-w-[85%] rounded-2xl rounded-tl-none bg-slate-50 px-4 py-3 text-sm text-slate-600 shadow-sm">
+                    <div class="flex items-center gap-3">
+                        <div class="thinking-dots flex items-center gap-1" aria-hidden="true">
+                            <span class="h-2 w-2 rounded-full bg-indigo-500"></span>
+                            <span class="h-2 w-2 rounded-full bg-indigo-500"></span>
+                            <span class="h-2 w-2 rounded-full bg-indigo-500"></span>
+                        </div>
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">AI:n tänker</span>
+                        <span class="ai-response-timer text-xs font-medium text-slate-400">Svarar: 0,0 s</span>
+                    </div>
+                </div>
+            `;
+            log.appendChild(row);
+            log.scrollTop = log.scrollHeight;
+            aiThinkingRow = row;
+            registerAIResponseTimerElement(row.querySelector('.ai-response-timer'));
+        }
+
+        function hideAIThinkingMessage() {
+            if (!aiThinkingRow) return;
+            aiThinkingRow.remove();
+            aiThinkingRow = null;
+        }
+
+        function attachAIResponseBadge(bubble, fullResponse) {
+            if (!bubble || !fullResponse) return null;
+
+            let wrapper = bubble.querySelector('.ai-response-wrapper');
+            if (wrapper) {
+                const panel = wrapper.querySelector('.ai-response-panel');
+                if (panel) {
+                    panel.textContent = fullResponse;
+                }
+                return wrapper;
+            }
+
+            wrapper = document.createElement('div');
+            wrapper.className = 'ai-response-wrapper mt-3';
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow-sm transition hover:bg-slate-100 hover:text-slate-700';
+            button.textContent = 'Hela svaret';
+
+            const panel = document.createElement('div');
+            panel.className = 'ai-response-panel mt-2 hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-600 whitespace-pre-wrap';
+            panel.textContent = fullResponse;
+
+            button.onclick = () => {
+                panel.classList.toggle('hidden');
+                button.setAttribute('aria-expanded', String(!panel.classList.contains('hidden')));
+            };
+
+            wrapper.appendChild(button);
+            wrapper.appendChild(panel);
+            bubble.appendChild(wrapper);
+            return wrapper;
+        }
+
+        function createAIStreamingMessage() {
+            if (aiStreamingAssistant) return aiStreamingAssistant;
+
+            const log = document.getElementById('ai-chat-log');
+            const row = document.createElement('div');
+            row.className = 'flex gap-3 fade-in';
+            row.innerHTML = `
+                <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-100">
+                    🤖
+                </div>
+            `;
+
+            const bubble = document.createElement('div');
+            bubble.className = 'max-w-[85%] rounded-2xl rounded-tl-none bg-slate-50 p-4 text-sm text-slate-700 shadow-sm';
+
+            const thinking = document.createElement('div');
+            thinking.className = 'ai-thinking-stream mb-3 hidden max-h-32 overflow-y-auto rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-700 whitespace-pre-wrap';
+            bubble.appendChild(thinking);
+
+            const content = document.createElement('div');
+            bubble.appendChild(content);
+
+            const timer = document.createElement('div');
+            timer.className = 'ai-response-timer mt-2 text-[11px] font-medium text-slate-400';
+            timer.textContent = 'Svarar: 0,0 s';
+            bubble.appendChild(timer);
+
+            row.appendChild(bubble);
+            log.appendChild(row);
+            log.scrollTop = log.scrollHeight;
+
+            aiStreamingAssistant = {
+                row,
+                bubble,
+                thinking,
+                content,
+                timer,
+                actionButton: null,
+                fullResponse: '',
+            };
+            registerAIResponseTimerElement(timer);
+
+            return aiStreamingAssistant;
+        }
+
+        function updateAIStreamingThinking(text) {
+            const assistant = createAIStreamingMessage();
+            assistant.thinking.classList.remove('hidden');
+            assistant.thinking.textContent = text ? `Tänker: ${text}` : 'Tänker...';
+            const log = document.getElementById('ai-chat-log');
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function updateAIStreamingMessage(text) {
+            const assistant = createAIStreamingMessage();
+            assistant.content.innerHTML = escapeHtml(text).replace(/\n/g, '<br>');
+            const log = document.getElementById('ai-chat-log');
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function setAIStreamingFullResponse(fullResponse) {
+            if (!fullResponse) return;
+            const assistant = createAIStreamingMessage();
+            assistant.fullResponse = fullResponse;
+            attachAIResponseBadge(assistant.bubble, fullResponse);
+        }
+
+        function stripAIRecommendationCommand(text) {
+            const rawText = String(text || '');
+            if (rawText.trim().startsWith('[')) return '';
+            return rawText.replace(/\s*\[\[[\s\S]*$/i, '').trim();
+        }
+
+        function getAISuggestionFallbackText(suggestion) {
+            return suggestion && suggestion.department
+                ? `Det låter som att detta hör till ${suggestion.department}.`
+                : '';
+        }
+
+        function updateAIStreamingVisibleText(rawText) {
+            const visibleText = stripAIRecommendationCommand(rawText);
+            if (visibleText) {
+                updateAIStreamingMessage(visibleText);
+            }
+        }
+
+        function ensureAIStreamingAction(action) {
+            if (!action || !action.department) return;
+            const assistant = createAIStreamingMessage();
+            if (assistant.actionButton) return;
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'mt-3 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-semibold text-indigo-600 border border-indigo-100 shadow-sm transition hover:bg-slate-100';
+            button.textContent = action.label || `Välj ${action.department}`;
+            button.onclick = () => openOrderForm(action.department, 'ai');
+            assistant.bubble.appendChild(button);
+            assistant.actionButton = button;
+        }
+
+        function resetAIStreamingMessage() {
+            if (aiStreamingAssistant) {
+                aiStreamingAssistant.row.remove();
+                aiStreamingAssistant = null;
+            }
+        }
+
+        function finalizeAIStreamingMessage() {
+            aiStreamingAssistant = null;
+        }
+
         function addAIChatMessage(role, text, action = null, trackHistory = true, historyText = null) {
             if (trackHistory) {
                 aiChatHistory.push({ role, content: historyText || text });
@@ -1252,29 +1584,25 @@
             appendAIChatMessage(role, text, action);
         }
 
-        function refreshAIChatContinueButton() {
-            const button = document.getElementById('ai-chat-continue');
-            if (!button) return;
-
-            if (currentChatSuggestedDept) {
-                button.textContent = `Gå vidare till ${currentChatSuggestedDept}`;
-                button.classList.remove('hidden');
-            } else {
-                button.classList.add('hidden');
-            }
-        }
-
         function resetAIChat() {
             currentChatSuggestedDept = '';
             aiChatHistory = [];
+            hideAIThinkingMessage();
+            resetAIStreamingMessage();
+            clearAIResponseTimer();
+            if (aiChatAbortController) {
+                aiChatAbortController.abort();
+                aiChatAbortController = null;
+            }
+            setAIChatBusy(false);
             const log = document.getElementById('ai-chat-log');
             log.innerHTML = '';
-            refreshAIChatContinueButton();
         }
 
         function showAIChat() {
             showPage('choose-path-page');
             resetAIChat();
+            refreshAIStatusBadge();
             const input = document.getElementById('ai-chat-input');
             input.value = '';
             input.focus();
@@ -1283,8 +1611,15 @@
         function sendAIQuickPrompt(text) {
             showPage('choose-path-page');
             resetAIChat();
+            refreshAIStatusBadge();
             document.getElementById('ai-chat-input').value = text;
             sendAIMessage();
+        }
+
+        function stopAIMessage() {
+            if (aiChatAbortController) {
+                aiChatAbortController.abort();
+            }
         }
 
         async function sendAIMessage(event) {
@@ -1296,51 +1631,204 @@
 
             addAIChatMessage('user', text);
             input.value = '';
+            setAIChatBusy(true);
+            setAIStatusBadge('starting');
+            startAIResponseTimer();
+            showAIThinkingMessage();
+            const requestAbortController = new AbortController();
+            aiChatAbortController = requestAbortController;
 
-            let result = null;
+            let finalEvent = null;
+            let streamedThinking = '';
+            let streamedText = '';
+            let streamFailed = null;
+            let wasAborted = false;
+            let isCurrentRequest = false;
             try {
-                result = await apiRequest('/api/ai/suggest', {
+                const response = await fetch(`${API_BASE}/api/ai/suggest`, {
                     method: 'POST',
-                    body: JSON.stringify({ messages: aiChatHistory })
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: requestAbortController.signal,
+                    body: JSON.stringify({ messages: aiChatHistory, stream: true })
                 });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => null);
+                    throw new Error((errorData && errorData.error) || 'api_error');
+                }
+
+                if (!response.body || !response.body.getReader) {
+                    throw new Error('stream_unavailable');
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+
+                    let newlineIndex = buffer.indexOf('\n');
+                    while (newlineIndex !== -1) {
+                        const line = buffer.slice(0, newlineIndex).trim();
+                        buffer = buffer.slice(newlineIndex + 1);
+                        newlineIndex = buffer.indexOf('\n');
+                        if (!line) continue;
+
+                        const event = JSON.parse(line);
+                        console.debug('[AI stream event]', event);
+                        if (event.type === 'thinking' && typeof event.content === 'string') {
+                            hideAIThinkingMessage();
+                            setAIStatusBadge('warm');
+                            streamedThinking += event.content;
+                            updateAIStreamingThinking(streamedThinking);
+                        } else if (event.type === 'delta' && typeof event.content === 'string') {
+                            hideAIThinkingMessage();
+                            setAIStatusBadge('warm');
+                            streamedText += event.content;
+                            console.debug('[AI streamed text]', streamedText);
+                            updateAIStreamingVisibleText(streamedText);
+                        } else if (event.type === 'final') {
+                            console.debug('[AI final event]', event);
+                            finalEvent = event;
+                        } else if (event.type === 'error') {
+                            console.debug('[AI stream error event]', event);
+                            throw new Error(event.error || 'api_error');
+                        }
+                    }
+                }
+
+                buffer += decoder.decode();
+                const tail = buffer.trim();
+                if (tail) {
+                    const event = JSON.parse(tail);
+                    console.debug('[AI stream tail event]', event);
+                    if (event.type === 'thinking' && typeof event.content === 'string') {
+                        hideAIThinkingMessage();
+                        setAIStatusBadge('warm');
+                        streamedThinking += event.content;
+                        updateAIStreamingThinking(streamedThinking);
+                    } else if (event.type === 'delta' && typeof event.content === 'string') {
+                        hideAIThinkingMessage();
+                        setAIStatusBadge('warm');
+                        streamedText += event.content;
+                        console.debug('[AI streamed text]', streamedText);
+                        updateAIStreamingVisibleText(streamedText);
+                    } else if (event.type === 'final') {
+                        console.debug('[AI final event]', event);
+                        finalEvent = event;
+                    } else if (event.type === 'error') {
+                        console.debug('[AI stream error event]', event);
+                        throw new Error(event.error || 'api_error');
+                    }
+                }
             } catch (error) {
                 console.error(error);
-                currentChatSuggestedDept = '';
-                refreshAIChatContinueButton();
+                if (error && error.name === 'AbortError') {
+                    wasAborted = true;
+                } else {
+                    streamFailed = error;
+                }
+            } finally {
+                isCurrentRequest = aiChatAbortController === requestAbortController;
+                if (isCurrentRequest) {
+                    hideAIThinkingMessage();
+                    setAIChatBusy(false);
+                    aiChatAbortController = null;
+                    refreshAIStatusBadge();
+                }
+            }
+
+            if (!isCurrentRequest && wasAborted) {
                 return;
             }
 
-            const suggestion = result && result.suggestion;
+            const finalVisibleText = String((finalEvent && (finalEvent.rawResponse || finalEvent.reply)) || '').trim();
+            if (!wasAborted && !streamFailed && !finalVisibleText) {
+                try {
+                    const fallback = await apiRequest('/api/ai/suggest', {
+                        method: 'POST',
+                        body: JSON.stringify({ messages: aiChatHistory })
+                    });
+                    finalEvent = fallback;
+                } catch (error) {
+                    console.error(error);
+                    streamFailed = error;
+                }
+            }
+
+            if (wasAborted) {
+                currentChatSuggestedDept = '';
+                if (streamedText) {
+                    updateAIStreamingVisibleText(streamedText);
+                    setAIStreamingFullResponse(`${streamedThinking}${streamedText}`);
+                    finishAIResponseTimer('Avbröts efter');
+                } else if (streamedThinking) {
+                    updateAIStreamingThinking(streamedThinking);
+                    setAIStreamingFullResponse(streamedThinking);
+                    finishAIResponseTimer('Avbröts efter');
+                } else {
+                    resetAIStreamingMessage();
+                    clearAIResponseTimer();
+                }
+                finalizeAIStreamingMessage();
+                return;
+            }
+
+            if (streamFailed) {
+                currentChatSuggestedDept = '';
+                if (streamedText) {
+                    updateAIStreamingVisibleText(streamedText);
+                    setAIStreamingFullResponse(`${streamedThinking}${streamedText}`);
+                } else if (streamedThinking) {
+                    updateAIStreamingThinking(streamedThinking);
+                    setAIStreamingFullResponse(streamedThinking);
+                } else {
+                    updateAIStreamingMessage('Jag kunde inte nå AI:n just nu. Försök igen om en stund.');
+                    setAIStreamingFullResponse('Jag kunde inte nå AI:n just nu. Försök igen om en stund.');
+                }
+                finishAIResponseTimer('Fel efter');
+                finalizeAIStreamingMessage();
+                return;
+            }
+
+            const suggestion = finalEvent && finalEvent.suggestion;
+            const replyText = String((finalEvent && finalEvent.reply) || streamedText || '').trim();
+            const rawResponseText = String((finalEvent && (finalEvent.fullResponse || finalEvent.rawResponse)) || `${streamedThinking}${streamedText}` || replyText || '').trim();
+            const displayText = String(replyText || stripAIRecommendationCommand(rawResponseText) || stripAIRecommendationCommand(streamedText)).trim();
+            console.debug('[AI render decision]', {
+                suggestion,
+                replyText,
+                rawResponseText,
+                displayText,
+                streamedText,
+                finalEvent,
+            });
             if (suggestion && suggestion.department) {
                 currentChatSuggestedDept = suggestion.department;
-                const departmentLine = `Jag tror att det här hör till ${suggestion.department}.`;
-                const visibleText = departmentLine;
-                const historyParts = [departmentLine];
-                if (suggestion.reason) historyParts.push(`Motivering: ${suggestion.reason}`);
-                if (result.reply) historyParts.push(result.reply);
-                const historyText = historyParts.join(' ');
-                addAIChatMessage(
-                    'assistant',
-                    visibleText,
-                    { label: `Välj ${suggestion.department}`, department: suggestion.department },
-                    true,
-                    historyText
-                );
-            } else if (result && result.reply) {
+                const visibleText = displayText || replyText || stripAIRecommendationCommand(rawResponseText) || getAISuggestionFallbackText(suggestion);
+                aiChatHistory.push({ role: 'assistant', content: visibleText });
+                updateAIStreamingMessage(visibleText);
+                setAIStreamingFullResponse(rawResponseText || visibleText);
+                ensureAIStreamingAction({ label: `Välj ${suggestion.department}`, department: suggestion.department });
+                finishAIResponseTimer();
+            } else if (replyText) {
                 currentChatSuggestedDept = '';
-                addAIChatMessage('assistant', result.reply, null, true, result.reply);
+                aiChatHistory.push({ role: 'assistant', content: displayText || replyText });
+                if (displayText) {
+                    updateAIStreamingMessage(displayText);
+                    setAIStreamingFullResponse(rawResponseText || displayText);
+                }
+                finishAIResponseTimer();
+            } else {
+                currentChatSuggestedDept = '';
+                const fallbackText = displayText || 'Modellen svarade utan text.';
+                updateAIStreamingMessage(fallbackText);
+                setAIStreamingFullResponse(rawResponseText || fallbackText);
+                finishAIResponseTimer();
             }
-
-            refreshAIChatContinueButton();
-        }
-
-        function continueFromAIChat() {
-            if (currentChatSuggestedDept) {
-                openOrderForm(currentChatSuggestedDept, 'ai');
-                return;
-            }
-
-            showDepartments();
+            finalizeAIStreamingMessage();
         }
 
         // --- GUIDE LOGIK ---
@@ -1376,8 +1864,8 @@
 
         function handleOrderFormBack() {
             const config = BportalUI.getOrderFormBackConfig(currentOrderFormSource);
-            if (config.targetPage === 'select-department') {
-                showPage('select-department');
+            if (config.targetPage) {
+                showPage(config.targetPage);
                 return;
             }
 

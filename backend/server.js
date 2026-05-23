@@ -8,9 +8,16 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const DATA_FILE = process.env.BPORTAL_DATA_FILE || path.join(__dirname, 'data', 'orders.json');
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'granite4.1:3b';
-const OLLAMA_NUM_CTX = Number(process.env.OLLAMA_NUM_CTX || 30000);
+const OLLAMA_NUM_CTX = Number(process.env.OLLAMA_NUM_CTX || 7500);
+const OLLAMA_NUM_PREDICT = Number(process.env.OLLAMA_NUM_PREDICT || 120);
+const OLLAMA_KEEP_ALIVE = process.env.OLLAMA_KEEP_ALIVE || '-1';
+const OLLAMA_WARMUP = process.env.OLLAMA_WARMUP === '1';
+const OLLAMA_WARMUP_INTERVAL_MS = Number(process.env.OLLAMA_WARMUP_INTERVAL_MS || 30 * 60 * 1000);
+const OLLAMA_WARMUP_PROMPT = process.env.OLLAMA_WARMUP_PROMPT || 'Svara endast med OK.';
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
+
+let activeOllamaWarmupAbortController = null;
 
 const DEPARTMENTS = [
   'Frågor om partiet',
@@ -178,6 +185,24 @@ function text(statusCode, body, contentType) {
   };
 }
 
+function stream(statusCode, bodyWriter, headers = {}) {
+  return {
+    statusCode,
+    headers: {
+      'content-type': 'application/x-ndjson; charset=utf-8',
+      'cache-control': 'no-cache',
+      'access-control-allow-origin': '*',
+      connection: 'keep-alive',
+      ...headers,
+    },
+    stream: bodyWriter,
+  };
+}
+
+function writeNdjson(write, payload) {
+  write(`${JSON.stringify(payload)}\n`);
+}
+
 function parseBody(body) {
   if (!body) return {};
   try {
@@ -334,61 +359,66 @@ function extractAiSuggestion(content, state) {
 
   const text = String(content).trim();
 
-  try {
-    const parsed = JSON.parse(text);
-    const department = normalizeDepartmentName(parsed.department, state);
+  const commandMatch = text.match(/\[\[\s*recommend\s+department="([^"]+)"(?:\s+confidence="([^"]+)")?(?:\s+reason="([^"]*)")?\s*\]\]?\s*$/i);
+  if (commandMatch) {
+    const department = normalizeDepartmentName(commandMatch[1], state);
+    const reply = text.slice(0, commandMatch.index).trim();
     return {
       department,
-      reason: String(parsed.reason || '').trim(),
-      confidence: Number(parsed.confidence || 0),
-      reply: String(parsed.reply || '').trim(),
-    };
-  } catch {
-    const commandMatch = text.match(/\[\[\s*recommend\s+department="([^"]+)"(?:\s+confidence="([^"]+)")?(?:\s+reason="([^"]*)")?\s*\]\]?\s*$/i);
-    if (commandMatch) {
-      const department = normalizeDepartmentName(commandMatch[1], state);
-      const reply = text.slice(0, commandMatch.index).trim();
-      return {
-        department,
-        reason: String(commandMatch[3] || '').trim() || reply,
-        confidence: Number(commandMatch[2] || 0),
-        reply,
-      };
-    }
-
-    const contentText = text.toLowerCase();
-    const department = getDepartmentNames(state).find((entry) => contentText.includes(entry.toLowerCase()));
-    return {
-      department: department || null,
-      reason: department ? text : '',
-      confidence: department ? 0.5 : 0,
-      reply: department ? '' : text,
+      reason: String(commandMatch[3] || '').trim() || reply,
+      confidence: Number(commandMatch[2] || 0),
+      reply,
     };
   }
+
+  return {
+    department: null,
+    reason: '',
+    confidence: 0,
+    reply: text,
+  };
 }
 
 function buildAiPrompt(state) {
   const departments = getDepartmentNames(state);
+  const departmentList = departments.map((department) => `- ${department}`).join('\n');
 
   return [
-    'Du är en fri chattassistent i en beställningsportal.',
-    'Du pratar med användaren som en hjälpsam människa, inte som ett formulär.',
-    `Tillåtna avdelningar: ${departments.join(', ')}.`,
-    'Svara fritt och naturligt på svenska. Du får småprata, svara på vardaglig fråga eller vardagliga frågor, ställa följdfrågor och vara konversationsmässig.',
-    'Om användaren småpratar får du svara naturligt och kort.',
-    'Ditt huvudmål är att hjälpa användaren vidare och, när det passar, rekommendera en avdelning av de tillåtna.',
-    'Om du redan kan avgöra rätt avdelning, ställ inga följdfrågor. Säg det kort och vänligt i vanlig text och lägg sedan till exakt en kommando-rad på egen rad i slutet av svaret.',
-    'Om användaren frågar varför du föreslog en avdelning, svara kort med motiveringen i vanlig text och rekommendera bara igen om det fortfarande är relevant.',
+    'Du är en kortfattad routingassistent i en beställningsportal.',
+    'Ditt huvudmål är att så snabbt som möjligt rekommendera rätt avdelning.',
+    'Du får alltid den aktuella listan över skapade och tillgängliga avdelningar nedan.',
+    'Du får bara rekommendera en avdelning om namnet finns exakt i listan. Hitta aldrig på egna avdelningsnamn.',
+    'Tillgängliga avdelningar:',
+    departmentList,
+    'Skriv på svenska, kort och direkt. Använd normalt högst en kort mening före kommandoraden.',
+    'När du rekommenderar en avdelning måste du alltid skriva minst en kort vanlig mening före kommandoraden.',
+    'Svara aldrig med enbart kommandoraden. Kommandoraden är endast för systemet, inte för användaren.',
+    'Undvik följdfrågor. Rekommendera en avdelning så fort användarens text innehåller en tydlig signal, även om texten bara är ett eller två ord.',
+    'Ställ bara en följdfråga om det helt saknas ärende, till exempel bara "hej", "ok", "ja", "nej", tack eller rent småprat.',
+    'Gissa aldrig avdelning utifrån enbart hälsning, tack, småprat eller allmänna frågor utan ärende.',
+    'Tolka korta program- och systemnamn som ärenden när de brukar höra till en avdelning.',
+    'Tydliga signaler: datorproblem, inloggning, lösenord, Microsoft Word, Excel, Office, e-post, skrivare, Teams, Zoom eller annan mjukvara => IT-support / Mjukvara; bild, banner, affisch, design eller logo => Grafikgruppen; valarbete, kampanj eller flygblad => Valorganisation.',
+    'Om du kan avgöra rätt avdelning från användarens beskrivna ärende, ställ inga följdfrågor. Rekommendera direkt och lägg sedan till exakt en kommando-rad på egen rad i slutet av svaret.',
+    'Om användaren frågar varför du föreslog en avdelning, svara kort med motiveringen och rekommendera bara igen om det fortfarande är relevant.',
     'När du vill rekommendera en avdelning, lägg till exakt en kommando-rad på egen rad i slutet av svaret:',
     '[[recommend department="Grafikgruppen" confidence="0.93" reason="Kort motivering"]]',
     'Byt ut department till en av de tillåtna avdelningarna och använd confidence mellan 0 och 1.',
     'Om du inte vill rekommendera någon avdelning, skriv bara vanlig text utan kommando.',
+    'En avdelningsknapp visas bara om du faktiskt skriver kommandoraden ovan. Att nämna ett avdelningsnamn i vanlig text räcker inte.',
     'Exempel:',
     'Användare: Jag behöver hjälp med en banner.',
     'Assistent: Det låter som att detta hör till Grafikgruppen.',
     '[[recommend department="Grafikgruppen" confidence="0.94" reason="Det gäller en banner."]]',
+    'Användare: Har datorproblem',
+    'Assistent: Det låter som ett IT-ärende.',
+    '[[recommend department="IT-support / Mjukvara" confidence="0.9" reason="Användaren beskriver datorproblem."]]',
+    'Användare: microsoft word',
+    'Assistent: Det hör till IT-support / Mjukvara.',
+    '[[recommend department="IT-support / Mjukvara" confidence="0.9" reason="Microsoft Word är ett mjukvaruärende."]]',
+    'Användare: Hej',
+    'Assistent: Hej! Skriv kort vad ärendet gäller.',
     'Användare: Hur mår du?',
-    'Assistent: Jag mår bra, tack! Hur kan jag hjälpa dig vidare?',
+    'Assistent: Skriv kort vad ärendet gäller så väljer jag avdelning.',
   ].join('\n');
 }
 
@@ -420,7 +450,164 @@ function latestUserMessage(messages) {
   return '';
 }
 
-async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch, model = OLLAMA_MODEL, state } = {}) {
+function buildOllamaChatBody(messages, { model = OLLAMA_MODEL, state, stream: streamEnabled = false } = {}) {
+  return {
+    model,
+    stream: streamEnabled,
+    keep_alive: ollamaKeepAliveValue(),
+    messages: [
+      { role: 'system', content: buildAiPrompt(state) },
+      ...messages,
+    ],
+    options: {
+      temperature: 0.1,
+      num_ctx: OLLAMA_NUM_CTX,
+      num_predict: OLLAMA_NUM_PREDICT,
+    },
+  };
+}
+
+function ollamaKeepAliveValue(value = OLLAMA_KEEP_ALIVE) {
+  const textValue = String(value).trim();
+  return /^-?\d+$/.test(textValue) ? Number(textValue) : textValue;
+}
+
+function abortOllamaWarmup() {
+  if (!activeOllamaWarmupAbortController) return false;
+  activeOllamaWarmupAbortController.abort();
+  activeOllamaWarmupAbortController = null;
+  return true;
+}
+
+async function warmOllamaModel({ fetchFn = globalThis.fetch, model = OLLAMA_MODEL, signal = null } = {}) {
+  if (typeof fetchFn !== 'function') return false;
+
+  const response = await fetchFn(`${OLLAMA_BASE_URL}/api/generate`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    signal,
+    body: JSON.stringify({
+      model,
+      prompt: OLLAMA_WARMUP_PROMPT,
+      stream: false,
+      keep_alive: ollamaKeepAliveValue(),
+      options: {
+        num_ctx: OLLAMA_NUM_CTX,
+        num_predict: 1,
+      },
+    }),
+  });
+
+  return Boolean(response && response.ok);
+}
+
+function startOllamaWarmupLoop({ fetchFn = globalThis.fetch, model = OLLAMA_MODEL, intervalMs = OLLAMA_WARMUP_INTERVAL_MS } = {}) {
+  if (typeof fetchFn !== 'function') return null;
+
+  const runWarmup = async () => {
+    if (activeOllamaWarmupAbortController) return;
+
+    const abortController = new AbortController();
+    activeOllamaWarmupAbortController = abortController;
+
+    try {
+      const ok = await warmOllamaModel({ fetchFn, model, signal: abortController.signal });
+      if (!ok) {
+        console.warn('Ollama warmup misslyckades.');
+      }
+    } catch (error) {
+      if (abortController.signal.aborted) return;
+      console.warn(`Ollama warmup misslyckades: ${error.message}`);
+    } finally {
+      if (activeOllamaWarmupAbortController === abortController) {
+        activeOllamaWarmupAbortController = null;
+      }
+    }
+  };
+
+  runWarmup();
+  const timer = setInterval(runWarmup, intervalMs);
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+  return timer;
+}
+
+function stripRecommendationCommand(text) {
+  const rawText = String(text || '');
+  const match = rawText.match(/\[\[\s*recommend\b/i);
+  return (match ? rawText.slice(0, match.index) : rawText).trimEnd();
+}
+
+function defaultRecommendationReply(department) {
+  return `Det låter som att detta hör till ${department}.`;
+}
+
+function ollamaMessageText(message) {
+  if (!message || typeof message !== 'object') return '';
+  return [
+    String(message.thinking || ''),
+    String(message.content || ''),
+  ].filter(Boolean).join('');
+}
+
+function isOllamaModelLoaded(entry, model) {
+  const candidates = [
+    entry && entry.name,
+    entry && entry.model,
+  ].filter(Boolean).map(String);
+
+  return candidates.some((candidate) => candidate === model || candidate.startsWith(`${model}:`));
+}
+
+async function getAiModelStatus({ fetchFn = globalThis.fetch, model = OLLAMA_MODEL } = {}) {
+  if (typeof fetchFn !== 'function') {
+    return {
+      status: 'unavailable',
+      warm: false,
+      model,
+      source: 'none',
+      error: 'ollama_unavailable',
+    };
+  }
+
+  try {
+    const response = await fetchFn(`${OLLAMA_BASE_URL}/api/ps`, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`ollama_http_${response.status}`);
+    }
+
+    const data = await response.json();
+    const loadedModels = Array.isArray(data && data.models) ? data.models : [];
+    const warm = loadedModels.some((entry) => isOllamaModelLoaded(entry, model));
+
+    return {
+      status: warm ? 'warm' : 'cold',
+      warm,
+      model,
+      loadedModels: loadedModels.map((entry) => String((entry && (entry.model || entry.name)) || '')).filter(Boolean),
+      source: 'ollama',
+    };
+  } catch (error) {
+    return {
+      status: 'offline',
+      warm: false,
+      model,
+      source: 'none',
+      error: error.message,
+    };
+  }
+}
+
+async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch, model = OLLAMA_MODEL, state, signal } = {}) {
   const departments = getDepartmentNames(state);
 
   if (typeof fetchFn !== 'function') {
@@ -439,18 +626,12 @@ async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch,
       headers: {
         'content-type': 'application/json',
       },
-      body: JSON.stringify({
+      signal,
+      body: JSON.stringify(buildOllamaChatBody(messages, {
         model,
+        state,
         stream: false,
-        messages: [
-          { role: 'system', content: buildAiPrompt(state) },
-          ...messages,
-        ],
-        options: {
-          temperature: 0.1,
-          num_ctx: OLLAMA_NUM_CTX,
-        },
-      }),
+      })),
     });
 
     if (!response.ok) {
@@ -458,15 +639,18 @@ async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch,
     }
 
     const data = await response.json();
-    const suggestion = extractAiSuggestion(data && data.message && data.message.content, state);
+    const rawResponse = ollamaMessageText(data && data.message);
+    const suggestion = extractAiSuggestion(rawResponse, state);
     if (suggestion && suggestion.department) {
-      const reply = String(suggestion.reply || '').trim();
+      const reply = String(suggestion.reply || '').trim() || defaultRecommendationReply(suggestion.department);
       return {
         suggestion: {
           ...suggestion,
+          reply,
           source: 'ollama',
         },
         reply,
+        rawResponse,
         availableDepartments: departments,
         model,
         source: 'ollama',
@@ -477,6 +661,7 @@ async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch,
       return {
         suggestion: null,
         reply: suggestion.reply,
+        rawResponse,
         availableDepartments: departments,
         model,
         source: 'ollama',
@@ -500,12 +685,176 @@ async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch,
   };
 }
 
+async function getAiDepartmentSuggestionStream(messages, { fetchFn = globalThis.fetch, model = OLLAMA_MODEL, state, signal } = {}) {
+  const departments = getDepartmentNames(state);
+
+  if (typeof fetchFn !== 'function') {
+    return stream(200, async (write) => {
+      writeNdjson(write, {
+        type: 'error',
+        error: 'ollama_unavailable',
+      });
+    });
+  }
+
+  return stream(200, async (write) => {
+    try {
+      const response = await fetchFn(`${OLLAMA_BASE_URL}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        signal,
+        body: JSON.stringify(buildOllamaChatBody(messages, {
+          model,
+          state,
+          stream: true,
+        })),
+      });
+
+      if (!response.ok) {
+        writeNdjson(write, {
+          type: 'error',
+          error: `ollama_http_${response.status}`,
+        });
+        return;
+      }
+
+      if (!response.body || typeof response.body.getReader !== 'function') {
+        writeNdjson(write, {
+          type: 'error',
+          error: 'ollama_stream_unavailable',
+        });
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let rawThinking = '';
+      let rawContent = '';
+
+      async function drainBuffer(flush = false) {
+        let newlineIndex = buffer.indexOf('\n');
+        while (newlineIndex !== -1) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          newlineIndex = buffer.indexOf('\n');
+          if (!line) continue;
+
+          const chunk = JSON.parse(line);
+          const chunkThinking = String(chunk && chunk.message && chunk.message.thinking || '');
+          const chunkContent = String(chunk && chunk.message && chunk.message.content || '');
+          if (!chunkThinking && !chunkContent) continue;
+
+          if (chunkThinking) {
+            rawThinking += chunkThinking;
+            writeNdjson(write, {
+              type: 'thinking',
+              content: chunkThinking,
+            });
+          }
+
+          if (chunkContent) {
+            rawContent += chunkContent;
+            writeNdjson(write, {
+              type: 'delta',
+              content: chunkContent,
+            });
+          }
+        }
+
+        if (flush) {
+          const line = buffer.trim();
+          buffer = '';
+          if (!line) return;
+
+          const chunk = JSON.parse(line);
+          const chunkThinking = String(chunk && chunk.message && chunk.message.thinking || '');
+          const chunkContent = String(chunk && chunk.message && chunk.message.content || '');
+          if (chunkThinking) {
+            rawThinking += chunkThinking;
+            writeNdjson(write, {
+              type: 'thinking',
+              content: chunkThinking,
+            });
+          }
+
+          if (chunkContent) {
+            rawContent += chunkContent;
+            writeNdjson(write, {
+              type: 'delta',
+              content: chunkContent,
+            });
+          }
+        }
+      }
+
+      try {
+        while (true) {
+          if (signal && signal.aborted) {
+            return;
+          }
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          await drainBuffer(false);
+        }
+
+        buffer += decoder.decode();
+        await drainBuffer(true);
+      } catch (error) {
+        if (signal && signal.aborted) {
+          return;
+        }
+        writeNdjson(write, {
+          type: 'error',
+          error: error.message,
+        });
+        return;
+      }
+
+      const rawResponse = rawContent || rawThinking;
+      const fullResponse = rawThinking && rawContent
+        ? `${rawThinking}${rawContent}`
+        : rawResponse;
+      const suggestion = extractAiSuggestion(rawResponse, state);
+      const reply = suggestion && suggestion.department
+        ? stripRecommendationCommand(rawResponse) || defaultRecommendationReply(suggestion.department)
+        : stripRecommendationCommand(rawResponse);
+
+      writeNdjson(write, {
+        type: 'final',
+        suggestion: suggestion && suggestion.department ? {
+          ...suggestion,
+          reply,
+          source: 'ollama',
+        } : null,
+        reply,
+        rawThinking,
+        rawResponse,
+        fullResponse,
+        availableDepartments: departments,
+        model,
+        source: 'ollama',
+      });
+    } catch (error) {
+      if (signal && signal.aborted) {
+        return;
+      }
+      writeNdjson(write, {
+        type: 'error',
+        error: error.message,
+      });
+    }
+  });
+}
 function createApp(options = {}) {
   const state = options.state || loadState(options.dataFile);
   const dataFile = options.dataFile || DATA_FILE;
   const persist = options.persist || Boolean(options.dataFile);
 
-  async function handle({ method, path: requestPath, headers = {}, body = '' }) {
+  async function handle({ method, path: requestPath, headers = {}, body = '', signal = null }) {
     const url = new URL(requestPath, 'http://localhost');
 
     if (method === 'OPTIONS') {
@@ -533,6 +882,15 @@ function createApp(options = {}) {
       return json(200, {
         departments: getDepartmentRecords(state),
       });
+    }
+
+    if (method === 'GET' && url.pathname === '/api/ai/status') {
+      const result = await getAiModelStatus({
+        fetchFn: options.ollamaFetch || globalThis.fetch?.bind(globalThis),
+        model: options.ollamaModel || OLLAMA_MODEL,
+      });
+
+      return json(200, result);
     }
 
     if (method === 'PUT' && url.pathname === '/api/departments') {
@@ -591,18 +949,28 @@ function createApp(options = {}) {
     }
 
     if (method === 'POST' && url.pathname === '/api/ai/suggest') {
-    const payload = parseBody(body);
-    if (!payload) return json(400, { error: 'invalid_json' });
+      const payload = parseBody(body);
+      if (!payload) return json(400, { error: 'invalid_json' });
 
       const messages = normalizeAiMessages(payload);
       if (messages.length === 0) {
         return json(400, { error: 'message_required' });
       }
 
+      if (payload.stream) {
+        return getAiDepartmentSuggestionStream(messages, {
+          fetchFn: options.ollamaFetch || globalThis.fetch?.bind(globalThis),
+          model: options.ollamaModel || OLLAMA_MODEL,
+          state,
+          signal,
+        });
+      }
+
       const result = await getAiDepartmentSuggestion(messages, {
         fetchFn: options.ollamaFetch || globalThis.fetch?.bind(globalThis),
         model: options.ollamaModel || OLLAMA_MODEL,
         state,
+        signal,
       });
 
       return json(200, result);
@@ -702,20 +1070,43 @@ function createApp(options = {}) {
   return {
     handle,
     async inject(request) {
-      return handle({
+      const response = await handle({
         method: request.method || 'GET',
         path: request.path || '/',
         headers: request.headers || {},
         body: request.body || '',
       });
+
+      if (!response.stream) {
+        return response;
+      }
+
+      let body = '';
+      await response.stream((chunk) => {
+        body += chunk;
+      });
+
+      return {
+        statusCode: response.statusCode,
+        headers: response.headers,
+        body,
+      };
     },
     listen(port = PORT, callback) {
       const server = http.createServer((req, res) => {
         let body = '';
+        const requestAbortController = new AbortController();
+        const abortRequest = () => {
+          if (!requestAbortController.signal.aborted) {
+            requestAbortController.abort();
+          }
+        };
 
         req.on('data', (chunk) => {
           body += chunk;
         });
+
+        req.on('aborted', abortRequest);
 
         req.on('end', async () => {
           const response = await handle({
@@ -723,9 +1114,26 @@ function createApp(options = {}) {
             path: req.url,
             headers: req.headers,
             body,
+            signal: requestAbortController.signal,
           });
 
           res.writeHead(response.statusCode, response.headers);
+          if (response.stream) {
+            const closeHandler = () => abortRequest();
+            res.on('close', closeHandler);
+            try {
+              await response.stream((chunk) => {
+                if (!requestAbortController.signal.aborted) {
+                  res.write(chunk);
+                }
+              });
+            } finally {
+              res.off('close', closeHandler);
+            }
+            res.end();
+            return;
+          }
+
           res.end(response.body);
         });
       });
@@ -739,12 +1147,19 @@ if (require.main === module) {
   const app = createApp({ persist: true });
   app.listen(PORT, () => {
     console.log(`Bportalen backend kör på http://localhost:${PORT}`);
+    if (OLLAMA_WARMUP) {
+      startOllamaWarmupLoop();
+    }
   });
 }
 
 module.exports = {
   createApp,
   createDefaultState,
+  warmOllamaModel,
+  startOllamaWarmupLoop,
+  abortOllamaWarmup,
+  getAiModelStatus,
   DEPARTMENTS,
   DEPARTMENT_EMAILS,
   DEFAULT_DEPARTMENT_RECORDS,

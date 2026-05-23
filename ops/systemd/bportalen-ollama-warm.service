@@ -1,0 +1,18 @@
+[Unit]
+Description=Preload Bportalen Ollama model indefinitely
+Documentation=man:systemd.service(5)
+Wants=snap.ollama.listener.service
+After=network-online.target snap.ollama.listener.service
+
+[Service]
+Type=oneshot
+Environment=OLLAMA_URL=http://127.0.0.1:11434
+Environment=OLLAMA_MODEL=granite4.1:3b
+Environment=OLLAMA_NUM_CTX=7500
+Environment=OLLAMA_KEEP_ALIVE=-1
+ExecStart=/opt/bportal2/scripts/warm-ollama.sh
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

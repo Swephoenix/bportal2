@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Bportalen Ollama model preload after boot
+Documentation=man:systemd.timer(5)
+
+[Timer]
+OnBootSec=20s
+AccuracySec=30s
+Unit=bportalen-ollama-warm.service
+Persistent=false
+
+[Install]
+WantedBy=timers.target

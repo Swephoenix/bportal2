@@ -41,3 +41,11 @@ test('getOrderFormBackConfig returns department selection for manual orders', ()
     targetPage: 'select-department',
   });
 });
+
+test('getOrderFormBackConfig returns chat for AI suggested orders', () => {
+  assert.deepEqual(getOrderFormBackConfig('ai'), {
+    icon: 'fa-arrow-left',
+    label: 'Tillbaka till chatten',
+    targetPage: 'choose-path-page',
+  });
+});

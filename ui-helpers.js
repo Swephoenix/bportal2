@@ -34,6 +34,14 @@
     }
 
     function getOrderFormBackConfig(source) {
+        if (source === 'ai') {
+            return {
+                icon: 'fa-arrow-left',
+                label: 'Tillbaka till chatten',
+                targetPage: 'choose-path-page',
+            };
+        }
+
         if (source === 'manual') {
             return {
                 icon: 'fa-arrow-left',

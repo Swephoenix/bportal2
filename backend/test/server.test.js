@@ -1,7 +1,15 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 
-const { createApp, createDefaultState, DEPARTMENTS, DEPARTMENT_EMAILS } = require('../server');
+const {
+  createApp,
+  createDefaultState,
+  DEPARTMENTS,
+  DEPARTMENT_EMAILS,
+  warmOllamaModel,
+  startOllamaWarmupLoop,
+  abortOllamaWarmup,
+} = require('../server');
 
 async function request(app, method, path, body) {
   const response = await app.inject({
@@ -35,6 +43,56 @@ test('GET /api/health reports the backend is ready', async () => {
   assert.deepEqual(response.body.departments, DEPARTMENTS);
   assert.equal(response.body.departmentEmails.Grafikgruppen, DEPARTMENT_EMAILS.Grafikgruppen);
   assert.equal(response.body.departments.includes('IT-support / Mjukvara'), true);
+});
+
+test('GET /api/ai/status reports warm when the configured model is loaded', async () => {
+  const app = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async (url) => {
+      assert.equal(url, 'http://127.0.0.1:11434/api/ps');
+      return {
+        ok: true,
+        async json() {
+          return {
+            models: [
+              { name: 'granite4.1:3b' },
+            ],
+          };
+        },
+      };
+    },
+  });
+
+  const response = await request(app, 'GET', '/api/ai/status');
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.status, 'warm');
+  assert.equal(response.body.warm, true);
+  assert.equal(response.body.model, 'granite4.1:3b');
+  assert.deepEqual(response.body.loadedModels, ['granite4.1:3b']);
+});
+
+test('GET /api/ai/status reports cold when Ollama is reachable but the model is not loaded', async () => {
+  const app = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async () => ({
+      ok: true,
+      async json() {
+        return {
+          models: [
+            { name: 'llama3.2:3b' },
+          ],
+        };
+      },
+    }),
+  });
+
+  const response = await request(app, 'GET', '/api/ai/status');
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.status, 'cold');
+  assert.equal(response.body.warm, false);
+  assert.deepEqual(response.body.loadedModels, ['llama3.2:3b']);
 });
 
 test('GET /assets/b-logo.svg serves the b logo', async () => {
@@ -367,11 +425,7 @@ test('POST /api/ai/suggest returns an AI department suggestion for the chat harn
       ok: true,
       json: async () => ({
         message: {
-          content: JSON.stringify({
-            department: 'Grafikgruppen',
-            reason: 'Det handlar om en banner.',
-            confidence: 0.96,
-          }),
+          content: 'Det handlar om en banner.\n[[recommend department="Grafikgruppen" confidence="0.96" reason="Det handlar om en banner."]]',
         },
       }),
     }),
@@ -388,20 +442,18 @@ test('POST /api/ai/suggest returns an AI department suggestion for the chat harn
 });
 
 test('POST /api/ai/suggest forwards previous chat messages to Ollama', async () => {
+  let capturedUrl = null;
   let capturedBody = null;
   const aiApp = createApp({
     state: createDefaultState(),
-    ollamaFetch: async (_url, options) => {
+    ollamaFetch: async (url, options) => {
+      capturedUrl = url;
       capturedBody = JSON.parse(options.body);
       return {
         ok: true,
         json: async () => ({
           message: {
-            content: JSON.stringify({
-              department: 'IT-support / Mjukvara',
-              reason: 'Tidigare meddelanden nämner dator och inloggning.',
-              confidence: 0.88,
-            }),
+            content: 'Tidigare meddelanden nämner dator och inloggning.\n[[recommend department="IT-support / Mjukvara" confidence="0.88" reason="Tidigare meddelanden nämner dator och inloggning."]]',
           },
         }),
       };
@@ -417,14 +469,150 @@ test('POST /api/ai/suggest forwards previous chat messages to Ollama', async () 
   });
 
   assert.equal(response.statusCode, 200);
+  assert.equal(capturedUrl, 'http://127.0.0.1:11434/api/chat');
+  assert.equal(capturedBody.model, 'granite4.1:3b');
+  assert.equal(capturedBody.stream, false);
   assert.equal(capturedBody.messages.some((message) => message.content.includes('kampanjen')), true);
   assert.equal(capturedBody.messages.some((message) => message.content.includes('inloggningen på datorn')), true);
-  assert.equal(capturedBody.options.num_ctx, 30000);
+  assert.equal(capturedBody.options.num_ctx, 7500);
+  assert.equal(capturedBody.options.num_predict, 120);
+  assert.equal(capturedBody.keep_alive, -1);
   assert.equal(capturedBody.format, undefined);
   assert.equal(response.body.suggestion.department, 'IT-support / Mjukvara');
 });
 
-test('POST /api/ai/suggest uses a free-chat prompt with recommendation commands', async () => {
+test('POST /api/ai/suggest streams chunks and keeps Ollama loaded indefinitely', async () => {
+  let capturedBody = null;
+  const encoder = new TextEncoder();
+  const chunks = [
+    encoder.encode('{"message":{"thinking":"Tänker "}}\n'),
+    encoder.encode('{"message":{"content":"Hej "}}\n'),
+    encoder.encode('{"message":{"content":"du!"}}\n'),
+    encoder.encode('{"done":true}\n'),
+  ];
+  let chunkIndex = 0;
+
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async (_url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        body: {
+          getReader() {
+            return {
+              async read() {
+                if (chunkIndex < chunks.length) {
+                  return { value: chunks[chunkIndex++], done: false };
+                }
+
+                return { done: true };
+              },
+            };
+          },
+        },
+      };
+    },
+  });
+
+  const response = await aiApp.inject({
+    method: 'POST',
+    path: '/api/ai/suggest',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      message: 'Hur mår du?',
+      stream: true,
+    }),
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(capturedBody.stream, true);
+  assert.equal(capturedBody.keep_alive, -1);
+  assert.equal(capturedBody.options.num_predict, 120);
+
+  const lines = response.body.trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(lines[0].type, 'thinking');
+  assert.equal(lines[1].type, 'delta');
+  assert.equal(lines[0].content + lines[1].content + lines[2].content, 'Tänker Hej du!');
+  assert.equal(lines.at(-1).type, 'final');
+  assert.equal(lines.at(-1).reply, 'Hej du!');
+  assert.equal(lines.at(-1).rawThinking, 'Tänker ');
+  assert.equal(lines.at(-1).rawResponse, 'Hej du!');
+  assert.equal(lines.at(-1).fullResponse, 'Tänker Hej du!');
+});
+
+test('warmOllamaModel sends a preload prompt that keeps the configured model loaded', async () => {
+  let capturedUrl = null;
+  let capturedBody = null;
+  let capturedSignal = null;
+  const abortController = new AbortController();
+
+  const ok = await warmOllamaModel({
+    fetchFn: async (url, options) => {
+      capturedUrl = url;
+      capturedBody = JSON.parse(options.body);
+      capturedSignal = options.signal;
+      return { ok: true };
+    },
+    signal: abortController.signal,
+  });
+
+  assert.equal(ok, true);
+  assert.equal(capturedUrl, 'http://127.0.0.1:11434/api/generate');
+  assert.equal(capturedSignal, abortController.signal);
+  assert.equal(capturedBody.model, 'granite4.1:3b');
+  assert.equal(capturedBody.prompt, 'Svara endast med OK.');
+  assert.equal(capturedBody.stream, false);
+  assert.equal(capturedBody.keep_alive, -1);
+  assert.equal(capturedBody.options.num_ctx, 7500);
+  assert.equal(capturedBody.options.num_predict, 1);
+});
+
+test('POST /api/ai/suggest does not abort an in-flight Ollama startup warmup', async () => {
+  let warmupSignal = null;
+  let resolveWarmupStarted = null;
+  const warmupStarted = new Promise((resolve) => {
+    resolveWarmupStarted = resolve;
+  });
+
+  const timer = startOllamaWarmupLoop({
+    intervalMs: 60 * 60 * 1000,
+    fetchFn: async (_url, options) => {
+      warmupSignal = options.signal;
+      resolveWarmupStarted();
+      return new Promise(() => {});
+    },
+  });
+
+  try {
+    await warmupStarted;
+
+    const aiApp = createApp({
+      state: createDefaultState(),
+      ollamaFetch: async () => ({
+        ok: true,
+        json: async () => ({
+          message: {
+            content: 'Det hör till IT-support / Mjukvara.\n[[recommend department="IT-support / Mjukvara" confidence="0.9" reason="Det gäller mjukvara."]]',
+          },
+        }),
+      }),
+    });
+
+    const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+      message: 'microsoft word',
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.suggestion.department, 'IT-support / Mjukvara');
+    assert.equal(warmupSignal.aborted, false);
+  } finally {
+    abortOllamaWarmup();
+    clearInterval(timer);
+  }
+});
+
+test('POST /api/ai/suggest uses a concise routing prompt with recommendation commands', async () => {
   let capturedBody = null;
   const aiApp = createApp({
     state: createDefaultState(),
@@ -449,12 +637,76 @@ test('POST /api/ai/suggest uses a free-chat prompt with recommendation commands'
     message: 'Vi behöver en banner till kampanjen.',
   });
 
-  assert.match(capturedBody.messages[0].content, /fri chattassistent/i);
-  assert.match(capturedBody.messages[0].content, /hjälpsam människa/i);
+  assert.match(capturedBody.messages[0].content, /routingassistent/i);
+  assert.match(capturedBody.messages[0].content, /så snabbt som möjligt rekommendera/i);
   assert.match(capturedBody.messages[0].content, /huvudmål/i);
+  assert.match(capturedBody.messages[0].content, /Tillgängliga avdelningar:/);
+  assert.match(capturedBody.messages[0].content, /- Grafikgruppen/);
+  assert.match(capturedBody.messages[0].content, /exakt i listan/);
+  assert.match(capturedBody.messages[0].content, /alltid skriva minst en kort vanlig mening/);
+  assert.match(capturedBody.messages[0].content, /Svara aldrig med enbart kommandoraden/);
   assert.match(capturedBody.messages[0].content, /kommando-rad/i);
   assert.match(capturedBody.messages[0].content, /exempel/i);
   assert.match(capturedBody.messages[0].content, /banner/i);
+});
+
+test('POST /api/ai/suggest creates a visible reply if Ollama returns only the command', async () => {
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async () => ({
+      ok: true,
+      json: async () => ({
+        message: {
+          content: '[[recommend department="IT-support / Mjukvara" confidence="0.9" reason="Användaren beskriver datorproblem."]]',
+        },
+      }),
+    }),
+  });
+
+  const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Har datorproblem',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.suggestion.department, 'IT-support / Mjukvara');
+  assert.equal(response.body.reply, 'Det låter som att detta hör till IT-support / Mjukvara.');
+  assert.equal(response.body.reply.includes('[[recommend'), false);
+});
+
+test('POST /api/ai/suggest includes the currently configured department list in the prompt', async () => {
+  let capturedBody = null;
+  const state = createDefaultState();
+  state.departments = [
+    { name: 'Specialteamet', email: 'special@example.com' },
+    { name: 'Medlemsfrågor', email: 'medlem@example.com' },
+  ];
+
+  const aiApp = createApp({
+    state,
+    ollamaFetch: async (_url, options) => {
+      capturedBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => ({
+          message: {
+            content: 'Det hör till Specialteamet.\n[[recommend department="Specialteamet" confidence="0.9" reason="Det gäller specialteamet."]]',
+          },
+        }),
+      };
+    },
+  });
+
+  const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Skicka till specialteamet',
+  });
+
+  const systemPrompt = capturedBody.messages[0].content;
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.suggestion.department, 'Specialteamet');
+  assert.match(systemPrompt, /Tillgängliga avdelningar:/);
+  assert.match(systemPrompt, /- Specialteamet/);
+  assert.match(systemPrompt, /- Medlemsfrågor/);
+  assert.doesNotMatch(systemPrompt, /- Grafikgruppen/);
 });
 
 test('POST /api/ai/suggest can return a friendly reply without a department', async () => {
@@ -479,7 +731,7 @@ test('POST /api/ai/suggest can return a friendly reply without a department', as
   assert.equal(response.body.reply, 'Jag mår bra, tack! Hur kan jag hjälpa dig i dag?');
 });
 
-test('POST /api/ai/suggest allows casual conversation in the system prompt', async () => {
+test('POST /api/ai/suggest discourages follow-up questions in the system prompt', async () => {
   let capturedBody = null;
   const aiApp = createApp({
     state: createDefaultState(),
@@ -501,8 +753,57 @@ test('POST /api/ai/suggest allows casual conversation in the system prompt', asy
   });
 
   assert.ok(capturedBody && Array.isArray(capturedBody.messages));
-  assert.ok(capturedBody.messages[0].content.includes('vardaglig fråga'));
-  assert.ok(capturedBody.messages[0].content.includes('småpratar'));
+  assert.ok(capturedBody.messages[0].content.includes('Undvik följdfrågor'));
+  assert.ok(capturedBody.messages[0].content.includes('högst en kort mening'));
+  assert.ok(capturedBody.messages[0].content.includes('Gissa aldrig avdelning'));
+  assert.ok(capturedBody.messages[0].content.includes('så fort användarens text innehåller en tydlig signal'));
+  assert.ok(capturedBody.messages[0].content.includes('datorproblem'));
+  assert.ok(capturedBody.messages[0].content.includes('Microsoft Word'));
+  assert.ok(capturedBody.messages[0].content.includes('Skriv kort vad ärendet gäller'));
+});
+
+test('POST /api/ai/suggest does not recommend a department for a greeting', async () => {
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async () => ({
+      ok: true,
+      json: async () => ({
+        message: {
+          content: 'Hej! Vad gäller ditt ärende?',
+        },
+      }),
+    }),
+  });
+
+  const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Hej',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.suggestion, null);
+  assert.equal(response.body.reply, 'Hej! Vad gäller ditt ärende?');
+});
+
+test('POST /api/ai/suggest does not infer a department from plain text alone', async () => {
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async () => ({
+      ok: true,
+      json: async () => ({
+        message: {
+          content: 'Det här hör till Grafikgruppen, men jag skriver ingen kommando-rad.',
+        },
+      }),
+    }),
+  });
+
+  const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Vi behöver hjälp med en banner.',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.suggestion, null);
+  assert.equal(response.body.reply, 'Det här hör till Grafikgruppen, men jag skriver ingen kommando-rad.');
 });
 
 test('POST /api/ai/suggest extracts a department command from free-form chat', async () => {
