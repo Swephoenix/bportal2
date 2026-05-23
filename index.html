@@ -120,19 +120,19 @@
                 <h1 class="text-3xl font-bold text-gray-800">Logga in</h1>
                 <p class="text-gray-500 mt-2">portalen</p>
             </div>
-            <div class="space-y-4">
+            <form onsubmit="login(event)" class="space-y-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Användarnamn</label>
-                    <input type="text" id="username" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition">
+                    <input type="text" id="username" autocomplete="username" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Lösenord</label>
-                    <input type="password" id="password" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition">
+                    <input type="password" id="password" autocomplete="current-password" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition">
                 </div>
-                <button onclick="login()" class="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl hover:bg-blue-700 transition shadow-lg">
+                <button type="submit" class="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl hover:bg-blue-700 transition shadow-lg">
                     Logga in
                 </button>
-            </div>
+            </form>
             <div class="mt-6 text-xs text-gray-400 text-center">
                 User: user/user (Beställare) <br>
                 User: user2/user2 (Grafikgruppen)
@@ -206,11 +206,11 @@
             
             <!-- Frågorna -->
             <div class="space-y-3" id="guide-options">
-                <button onclick="guideResult('Grafiska produktionsgruppen')" class="w-full p-4 border border-gray-200 rounded-xl hover:bg-emerald-50 hover:border-emerald-200 text-left transition flex justify-between items-center group">
+                <button onclick="guideResult('Grafikgruppen')" class="w-full p-4 border border-gray-200 rounded-xl hover:bg-emerald-50 hover:border-emerald-200 text-left transition flex justify-between items-center group">
                     <span class="font-medium text-gray-700 group-hover:text-emerald-700">Bilder, design, tryckmaterial, banners eller layout</span>
                     <i class="fas fa-chevron-right text-gray-300 group-hover:text-emerald-500"></i>
                 </button>
-                <button onclick="guideResult('IT-support')" class="w-full p-4 border border-gray-200 rounded-xl hover:bg-emerald-50 hover:border-emerald-200 text-left transition flex justify-between items-center group">
+                <button onclick="guideResult('IT-support / Mjukvara')" class="w-full p-4 border border-gray-200 rounded-xl hover:bg-emerald-50 hover:border-emerald-200 text-left transition flex justify-between items-center group">
                     <span class="font-medium text-gray-700 group-hover:text-emerald-700">Datorstrul, inloggning, nätverk eller mjukvarufel</span>
                     <i class="fas fa-chevron-right text-gray-300 group-hover:text-emerald-500"></i>
                 </button>
@@ -243,14 +243,35 @@
         <button onclick="showPage('choose-path-page')" class="mb-6 text-blue-600 hover:underline flex items-center">
             <i class="fas fa-arrow-left mr-2"></i> Tillbaka
         </button>
-        <h2 class="mobile-title text-3xl font-bold mb-8">Välj mottagande avdelning</h2>
+        <div class="mb-8 flex flex-wrap items-center justify-between gap-3">
+            <h2 class="mobile-title text-3xl font-bold">Välj mottagande avdelning</h2>
+            <div class="flex flex-wrap gap-2">
+                <button id="department-edit-button" type="button" onclick="startDepartmentEdit()" class="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+                    <i class="fas fa-pen"></i>
+                    Redigera
+                </button>
+                <button id="department-add-button" type="button" onclick="addDepartmentDraft()" class="hidden inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50">
+                    <i class="fas fa-plus"></i>
+                    Lägg till
+                </button>
+                <button id="department-save-button" type="button" onclick="saveDepartmentEdit()" class="hidden inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                    <i class="fas fa-check"></i>
+                    Spara
+                </button>
+                <button id="department-cancel-button" type="button" onclick="cancelDepartmentEdit()" class="hidden inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    <i class="fas fa-times"></i>
+                    Avbryt
+                </button>
+            </div>
+        </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="dept-grid"></div>
     </section>
 
     <!-- SIDA: SKRIV BESTÄLLNING -->
     <section id="order-form-page" class="hidden mobile-section max-w-3xl mx-auto px-4 py-12">
-        <button onclick="showDashboard()" class="mb-6 text-blue-600 hover:underline flex items-center">
-            <i class="fas fa-times mr-2"></i> Avbryt och gå till start
+        <button id="order-form-back-button" onclick="handleOrderFormBack()" class="mb-6 text-blue-600 hover:underline flex items-center">
+            <i id="order-form-back-icon" class="fas fa-times mr-2"></i>
+            <span id="order-form-back-label">Avbryt och gå till start</span>
         </button>
         <div class="mobile-card bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
             <h2 id="target-dept-name" class="mobile-title text-2xl font-bold mb-6 text-blue-800">Ny Beställning</h2>
@@ -447,7 +468,44 @@
 
     <script src="ui-helpers.js"></script>
     <script>
-        const departments = ["Frågor om partiet", "Valorganisation", "Grafiska produktionsgruppen", "IT-support"];
+        const defaultDepartments = [
+            "Frågor om partiet",
+            "Valorganisation",
+            "Utskick i Sociala medier",
+            "Skribentgruppen",
+            "Filmgruppen",
+            "Juridikgruppen",
+            "Sekretessavtal",
+            "Beställa brochyrer",
+            "Grafikgruppen",
+            "Medlemsutskick",
+            "Medlemsregister",
+            "IT-support / Mjukvara",
+            "Hemsidan",
+            "Marknad",
+            "HR / Personalfrågor",
+        ];
+        const defaultDepartmentEmails = {
+            "Frågor om partiet": "fragor-om-partiet@example.com",
+            "Valorganisation": "valorganisation@example.com",
+            "Utskick i Sociala medier": "sociala-medier@example.com",
+            "Skribentgruppen": "skribentgruppen@example.com",
+            "Filmgruppen": "filmgruppen@example.com",
+            "Juridikgruppen": "juridikgruppen@example.com",
+            "Sekretessavtal": "sekretessavtal@example.com",
+            "Beställa brochyrer": "brochyrer@example.com",
+            "Grafikgruppen": "grafikgruppen@example.com",
+            "Medlemsutskick": "medlemsutskick@example.com",
+            "Medlemsregister": "medlemsregister@example.com",
+            "IT-support / Mjukvara": "it-support@example.com",
+            "Hemsidan": "hemsidan@example.com",
+            "Marknad": "marknad@example.com",
+            "HR / Personalfrågor": "hr@example.com",
+        };
+        let departmentRecords = defaultDepartments.map((name) => ({ name, email: defaultDepartmentEmails[name] }));
+        let departmentEditMode = false;
+        let departmentDraftRecords = [];
+
         const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:3001' : '';
         const MAX_ATTACHMENTS = 5;
         const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
@@ -461,11 +519,27 @@
                 if (!order || !user) return false;
                 if (user.role !== 'graphics') return false;
                 return order.status !== 'Avklarad';
+            },
+            getOrderFormBackConfig(source) {
+                if (source === 'manual') {
+                    return {
+                        icon: 'fa-arrow-left',
+                        label: 'Tillbaka till avdelningar',
+                        targetPage: 'select-department',
+                    };
+                }
+
+                return {
+                    icon: 'fa-times',
+                    label: 'Avbryt och gå till start',
+                    targetPage: 'dashboard',
+                };
             }
         };
 
         let currentUser = null;
         let currentDeptTarget = "";
+        let currentOrderFormSource = "";
         let recommendedDept = "";
         let currentChatSuggestedDept = "";
         let aiChatHistory = [];
@@ -476,10 +550,68 @@
 
         // Demobeställningar för grafikgruppen
         const demoOrders = [
-            { from: 'Erik (Kommunikation)', msg: 'Design av ny flyer för sommarkampanjen.', deadline: '2024-06-15', dept: 'Grafiska produktionsgruppen', status: 'Väntar' },
-            { from: 'Anna (HR)', msg: 'Uppdatera profilbilder för ledningsgruppen.', deadline: '2024-06-20', dept: 'Grafiska produktionsgruppen', status: 'Pågående' },
-            { from: 'Marknadsavdelningen', msg: 'Ta fram 3 st olika banners för Facebook-annonsering.', deadline: '', dept: 'Grafiska produktionsgruppen', status: 'Ny' }
+            { from: 'Erik (Kommunikation)', msg: 'Design av ny flyer för sommarkampanjen.', deadline: '2024-06-15', dept: 'Grafikgruppen', deptEmail: defaultDepartmentEmails['Grafikgruppen'], status: 'Väntar' },
+            { from: 'Anna (HR)', msg: 'Uppdatera profilbilder för ledningsgruppen.', deadline: '2024-06-20', dept: 'Grafikgruppen', deptEmail: defaultDepartmentEmails['Grafikgruppen'], status: 'Pågående' },
+            { from: 'Marknadsavdelningen', msg: 'Ta fram 3 st olika banners för Facebook-annonsering.', deadline: '', dept: 'Grafikgruppen', deptEmail: defaultDepartmentEmails['Grafikgruppen'], status: 'Ny' }
         ];
+
+        function getDepartmentEmailMap() {
+            return Object.fromEntries(departmentRecords.map((department) => [department.name, department.email]));
+        }
+
+        function normalizeDepartmentRecords(records) {
+            const seen = new Set();
+            const normalized = [];
+
+            (Array.isArray(records) ? records : []).forEach((record) => {
+                const name = String(record && record.name || '').trim();
+                const email = String(record && record.email || '').trim();
+                const key = name.toLowerCase();
+                if (!name || seen.has(key)) return;
+                normalized.push({ name, email: email || 'placeholder@example.com' });
+                seen.add(key);
+            });
+
+            return normalized.length ? normalized : defaultDepartments.map((name) => ({ name, email: defaultDepartmentEmails[name] }));
+        }
+
+        function loadLocalDepartments() {
+            try {
+                const saved = JSON.parse(localStorage.getItem('bportal_departments_v1') || 'null');
+                departmentRecords = normalizeDepartmentRecords(saved);
+            } catch {
+                departmentRecords = normalizeDepartmentRecords([]);
+            }
+        }
+
+        function saveLocalDepartments(records) {
+            localStorage.setItem('bportal_departments_v1', JSON.stringify(records));
+        }
+
+        async function loadDepartments() {
+            try {
+                const result = await apiRequest('/api/departments');
+                departmentRecords = normalizeDepartmentRecords(result.departments);
+            } catch (error) {
+                loadLocalDepartments();
+            }
+        }
+
+        async function persistDepartments(records) {
+            const normalized = normalizeDepartmentRecords(records);
+            try {
+                await apiRequest('/api/departments', {
+                    method: 'PUT',
+                    body: JSON.stringify({ departments: normalized })
+                });
+            } catch (error) {
+                if (window.location.protocol !== 'file:') {
+                    throw error;
+                }
+                saveLocalDepartments(normalized);
+            }
+            departmentRecords = normalized;
+        }
 
         async function apiRequest(path, options = {}) {
             const response = await fetch(`${API_BASE}${path}`, {
@@ -886,7 +1018,9 @@
             if (event.key === 'Escape') closeAttachmentModal();
         });
 
-        async function login() {
+        async function login(event) {
+            if (event) event.preventDefault();
+
             const user = document.getElementById('username').value;
             const pass = document.getElementById('password').value;
 
@@ -956,20 +1090,119 @@
             return div;
         }
 
-        function showDepartments() {
+        function setDepartmentEditControls() {
+            document.getElementById('department-edit-button').classList.toggle('hidden', departmentEditMode);
+            document.getElementById('department-add-button').classList.toggle('hidden', !departmentEditMode);
+            document.getElementById('department-save-button').classList.toggle('hidden', !departmentEditMode);
+            document.getElementById('department-cancel-button').classList.toggle('hidden', !departmentEditMode);
+        }
+
+        async function showDepartments() {
+            await loadDepartments();
+            departmentEditMode = false;
             showPage('select-department');
+            renderDepartments();
+        }
+
+        function renderDepartments() {
+            setDepartmentEditControls();
             const grid = document.getElementById('dept-grid');
             grid.innerHTML = '';
-            departments.forEach(dept => {
+            const records = departmentEditMode ? departmentDraftRecords : departmentRecords;
+
+            if (departmentEditMode) {
+                records.forEach((department, index) => {
+                    const row = document.createElement('div');
+                    row.className = 'rounded-xl border border-gray-200 bg-white p-4 shadow-sm';
+                    row.innerHTML = `
+                        <div class="space-y-3">
+                            <div>
+                                <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Avdelning</label>
+                                <input type="text" value="${escapeHtml(department.name)}" oninput="updateDepartmentDraft(${index}, 'name', this.value)" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Mejl</label>
+                                <input type="email" value="${escapeHtml(department.email)}" oninput="updateDepartmentDraft(${index}, 'email', this.value)" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <button type="button" onclick="removeDepartmentDraft(${index})" class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">
+                                <i class="fas fa-trash"></i>
+                                Ta bort
+                            </button>
+                        </div>
+                    `;
+                    grid.appendChild(row);
+                });
+                return;
+            }
+
+            records.forEach(department => {
                 const btn = document.createElement('button');
                 btn.type = 'button';
-                btn.className = "p-4 bg-white border border-gray-200 rounded-xl hover:bg-blue-50 transition text-left flex justify-between items-center";
-                btn.innerHTML = `<span>${dept}</span> <i class="fas fa-chevron-right text-gray-300"></i>`;
+                btn.className = "p-4 bg-white border border-gray-200 rounded-xl hover:bg-blue-50 transition text-left flex justify-between items-center gap-4";
+                btn.innerHTML = `
+                    <span>
+                        <span class="block font-semibold text-gray-800">${escapeHtml(department.name)}</span>
+                        <span class="mt-1 block text-xs text-gray-500">${escapeHtml(department.email || 'placeholder@example.com')}</span>
+                    </span>
+                    <i class="fas fa-chevron-right text-gray-300"></i>
+                `;
                 btn.onclick = () => {
-                    openOrderForm(dept);
+                    openOrderForm(department.name, 'manual');
                 };
                 grid.appendChild(btn);
             });
+        }
+
+        function startDepartmentEdit() {
+            departmentDraftRecords = departmentRecords.map((department) => ({ ...department }));
+            departmentEditMode = true;
+            renderDepartments();
+        }
+
+        function updateDepartmentDraft(index, field, value) {
+            if (!departmentDraftRecords[index]) return;
+            departmentDraftRecords[index][field] = value;
+        }
+
+        function removeDepartmentDraft(index) {
+            departmentDraftRecords.splice(index, 1);
+            renderDepartments();
+        }
+
+        function addDepartmentDraft() {
+            departmentDraftRecords.push({ name: '', email: 'placeholder@example.com' });
+            renderDepartments();
+        }
+
+        async function saveDepartmentEdit() {
+            const namedDrafts = departmentDraftRecords.filter((department) => String(department.name || '').trim());
+            if (namedDrafts.length === 0) {
+                alert('Lägg till minst en avdelning.');
+                return;
+            }
+
+            const normalized = normalizeDepartmentRecords(departmentDraftRecords);
+            if (normalized.length !== namedDrafts.length) {
+                alert('Kontrollera att varje avdelning har ett unikt namn.');
+                return;
+            }
+
+            try {
+                await persistDepartments(normalized);
+            } catch (error) {
+                alert('Avdelningarna kunde inte sparas. Försök igen.');
+                return;
+            }
+
+            departmentEditMode = false;
+            departmentDraftRecords = [];
+            renderDepartments();
+        }
+
+        function cancelDepartmentEdit() {
+            departmentEditMode = false;
+            departmentDraftRecords = [];
+            renderDepartments();
         }
 
         function appendAIChatMessage(role, text, action = null) {
@@ -997,7 +1230,7 @@
                     button.type = 'button';
                     button.className = 'mt-3 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-semibold text-indigo-600 border border-indigo-100 shadow-sm transition hover:bg-slate-100';
                     button.textContent = action.label || `Välj ${action.department}`;
-                    button.onclick = () => openOrderForm(action.department);
+                    button.onclick = () => openOrderForm(action.department, 'ai');
                     bubble.appendChild(button);
                 }
 
@@ -1103,7 +1336,7 @@
 
         function continueFromAIChat() {
             if (currentChatSuggestedDept) {
-                openOrderForm(currentChatSuggestedDept);
+                openOrderForm(currentChatSuggestedDept, 'ai');
                 return;
             }
 
@@ -1130,15 +1363,34 @@
         }
 
         function proceedFromGuide() {
-            openOrderForm(recommendedDept);
+            openOrderForm(recommendedDept, 'guide');
         }
         // -------------------
 
-        function openOrderForm(dept) {
+        function applyOrderFormBackConfig() {
+            const config = BportalUI.getOrderFormBackConfig(currentOrderFormSource);
+            const icon = document.getElementById('order-form-back-icon');
+            document.getElementById('order-form-back-label').innerText = config.label;
+            icon.className = `fas ${config.icon} mr-2`;
+        }
+
+        function handleOrderFormBack() {
+            const config = BportalUI.getOrderFormBackConfig(currentOrderFormSource);
+            if (config.targetPage === 'select-department') {
+                showPage('select-department');
+                return;
+            }
+
+            showDashboard();
+        }
+
+        function openOrderForm(dept, source = '') {
             currentDeptTarget = dept;
+            currentOrderFormSource = source;
             document.getElementById('target-dept-name').innerText = "Beställning till: " + dept;
             document.getElementById('order-deadline').value = getDefaultOrderDeadline();
             document.getElementById('order-deadline-picker').value = document.getElementById('order-deadline').value;
+            applyOrderFormBackConfig();
             showPage('order-form-page');
         }
 
@@ -1156,6 +1408,7 @@
                 msg: msg,
                 deadline: deadline,
                 dept: currentDeptTarget,
+                deptEmail: getDepartmentEmailMap()[currentDeptTarget] || 'placeholder@example.com',
                 status: 'Ny',
                 attachments: attachments
             };
@@ -1188,10 +1441,10 @@
 
             let graphicsOrders;
             try {
-                const result = await apiRequest('/api/orders?dept=Grafiska%20produktionsgruppen');
+                const result = await apiRequest('/api/orders?dept=Grafikgruppen');
                 graphicsOrders = result.orders;
             } catch (error) {
-                graphicsOrders = getOrders().filter(o => o.dept === "Grafiska produktionsgruppen");
+                graphicsOrders = getOrders().filter(o => o.dept === "Grafikgruppen" || o.dept === "Grafiska produktionsgruppen");
             }
 
             if(graphicsOrders.length === 0) {

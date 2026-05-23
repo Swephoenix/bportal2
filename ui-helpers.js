@@ -15,11 +15,11 @@
         if (!text.trim()) return null;
 
         if (/(bild|design|graf|affisch|banner|layout|tryck|flyer|logo|ikon)/.test(text)) {
-            return 'Grafiska produktionsgruppen';
+            return 'Grafikgruppen';
         }
 
         if (/(dator|it|inloggning|lösenord|nätverk|wifi|system|mail|skärm|skrivare|teknik)/.test(text)) {
-            return 'IT-support';
+            return 'IT-support / Mjukvara';
         }
 
         if (/(val|kampanj|dörrknack|flygblad|rörelse|schema|mobilisering)/.test(text)) {
@@ -33,6 +33,22 @@
         return null;
     }
 
+    function getOrderFormBackConfig(source) {
+        if (source === 'manual') {
+            return {
+                icon: 'fa-arrow-left',
+                label: 'Tillbaka till avdelningar',
+                targetPage: 'select-department',
+            };
+        }
+
+        return {
+            icon: 'fa-times',
+            label: 'Avbryt och gå till start',
+            targetPage: 'dashboard',
+        };
+    }
+
     function shouldShowProposalUploadButton(order, currentUser) {
         if (!order || !currentUser) return false;
         if (currentUser.role !== 'graphics') return false;
@@ -41,6 +57,7 @@
 
     const api = {
         getDefaultOrderDeadline,
+        getOrderFormBackConfig,
         shouldShowProposalUploadButton,
         suggestDepartmentFromMessage,
     };

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 
-const { createApp, createDefaultState } = require('../server');
+const { createApp, createDefaultState, DEPARTMENTS, DEPARTMENT_EMAILS } = require('../server');
 
 async function request(app, method, path, body) {
   const response = await app.inject({
@@ -32,6 +32,9 @@ test('GET /api/health reports the backend is ready', async () => {
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.ok, true);
   assert.equal(response.body.service, 'bportalen-backend');
+  assert.deepEqual(response.body.departments, DEPARTMENTS);
+  assert.equal(response.body.departmentEmails.Grafikgruppen, DEPARTMENT_EMAILS.Grafikgruppen);
+  assert.equal(response.body.departments.includes('IT-support / Mjukvara'), true);
 });
 
 test('GET /assets/b-logo.svg serves the b logo', async () => {
@@ -44,6 +47,43 @@ test('GET /assets/b-logo.svg serves the b logo', async () => {
   assert.equal(response.statusCode, 200);
   assert.equal(response.headers['content-type'], 'image/svg+xml; charset=utf-8');
   assert.match(response.body, /<svg/);
+});
+
+test('GET /api/departments lists department names and emails', async () => {
+  const app = freshApp();
+  const response = await request(app, 'GET', '/api/departments');
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.departments.some((department) => (
+    department.name === 'Grafikgruppen' && department.email === 'grafikgruppen@example.com'
+  )), true);
+});
+
+test('PUT /api/departments updates departments used by orders', async () => {
+  const app = freshApp();
+  const updated = await request(app, 'PUT', '/api/departments', {
+    departments: [
+      { name: 'Chefens avdelning', email: 'chefen@example.com' },
+      { name: 'Grafikgruppen', email: 'ny-grafik@example.com' },
+    ],
+  });
+
+  assert.equal(updated.statusCode, 200);
+  assert.deepEqual(updated.body.departments, [
+    { name: 'Chefens avdelning', email: 'chefen@example.com' },
+    { name: 'Grafikgruppen', email: 'ny-grafik@example.com' },
+  ]);
+
+  const created = await request(app, 'POST', '/api/orders', {
+    from: 'Personal',
+    msg: 'Skicka till ny avdelning.',
+    deadline: '',
+    dept: 'Chefens avdelning',
+  });
+
+  assert.equal(created.statusCode, 201);
+  assert.equal(created.body.order.dept, 'Chefens avdelning');
+  assert.equal(created.body.order.deptEmail, 'chefen@example.com');
 });
 
 test('OPTIONS /api/orders allows browser preflight requests', async () => {
@@ -86,15 +126,17 @@ test('POST /api/orders stores a new order and GET /api/orders returns it first',
     from: 'Personal',
     msg: 'Skapa en banner till kampanjen.',
     deadline: '2026-06-01',
-    dept: 'Grafiska produktionsgruppen',
+    dept: 'Grafikgruppen',
   });
 
   assert.equal(created.statusCode, 201);
   assert.equal(created.body.order.from, 'Personal');
   assert.equal(created.body.order.status, 'Ny');
+  assert.equal(created.body.order.dept, 'Grafikgruppen');
+  assert.equal(created.body.order.deptEmail, 'grafikgruppen@example.com');
   assert.ok(created.body.order.id);
 
-  const listed = await request(app, 'GET', '/api/orders?dept=Grafiska%20produktionsgruppen');
+  const listed = await request(app, 'GET', '/api/orders?dept=Grafikgruppen');
 
   assert.equal(listed.statusCode, 200);
   assert.equal(listed.body.orders[0].id, created.body.order.id);
@@ -107,7 +149,7 @@ test('POST /api/orders stores dates in yyyy-mm-dd format', async () => {
     from: 'Personal',
     msg: 'Skapa en banner till kampanjen.',
     deadline: '2026-06-01',
-    dept: 'Grafiska produktionsgruppen',
+    dept: 'Grafikgruppen',
   });
 
   assert.equal(created.statusCode, 201);
@@ -121,7 +163,7 @@ test('POST /api/orders rejects deadlines outside yyyy-mm-dd format', async () =>
     from: 'Personal',
     msg: 'Skapa en banner till kampanjen.',
     deadline: '2026-6-1',
-    dept: 'Grafiska produktionsgruppen',
+    dept: 'Grafikgruppen',
   });
 
   assert.equal(response.statusCode, 400);
@@ -135,13 +177,13 @@ test('GET /api/orders can filter orders by sender', async () => {
     from: 'Personal',
     msg: 'Min skickade beställning.',
     deadline: '',
-    dept: 'IT-support',
+    dept: 'IT-support / Mjukvara',
   });
   await request(app, 'POST', '/api/orders', {
     from: 'Annan användare',
     msg: 'Ska inte synas för Personal.',
     deadline: '',
-    dept: 'IT-support',
+    dept: 'IT-support / Mjukvara',
   });
 
   const listed = await request(app, 'GET', '/api/orders?from=Personal');
@@ -156,7 +198,7 @@ test('POST /api/orders stores file attachments with safe metadata', async () => 
     from: 'Personal',
     msg: 'Använd bifogad logotyp.',
     deadline: '',
-    dept: 'Grafiska produktionsgruppen',
+    dept: 'Grafikgruppen',
     attachments: [
       {
         name: '../kampanj-logo.png',
@@ -200,7 +242,7 @@ test('POST /api/orders rejects too many attachments', async () => {
     from: 'Personal',
     msg: 'För många filer.',
     deadline: '',
-    dept: 'Grafiska produktionsgruppen',
+    dept: 'Grafikgruppen',
     attachments: Array.from({ length: 6 }, (_, index) => ({
       name: `fil-${index}.txt`,
       type: 'text/plain',
@@ -220,7 +262,7 @@ test('POST /api/orders/:id/proposals adds image proposals and puts the order on 
     from: 'Personal',
     msg: 'Ta fram två kampanjbilder.',
     deadline: '',
-    dept: 'Grafiska produktionsgruppen',
+    dept: 'Grafikgruppen',
   });
 
   const response = await request(app, 'POST', `/api/orders/${created.body.order.id}/proposals`, {
@@ -248,7 +290,7 @@ test('POST /api/orders/:id/review stores the orderer review and completion choic
     from: 'Personal',
     msg: 'Ta fram kampanjbild.',
     deadline: '',
-    dept: 'Grafiska produktionsgruppen',
+    dept: 'Grafikgruppen',
   });
   const proposal = await request(app, 'POST', `/api/orders/${created.body.order.id}/proposals`, {
     from: 'Grafikgruppen',
@@ -287,7 +329,7 @@ test('POST /api/orders/:id/reopen lets graphics reopen a completed order', async
     from: 'Personal',
     msg: 'Ta fram kampanjbild.',
     deadline: '',
-    dept: 'Grafiska produktionsgruppen',
+    dept: 'Grafikgruppen',
   });
   const proposal = await request(app, 'POST', `/api/orders/${created.body.order.id}/proposals`, {
     from: 'Grafikgruppen',
@@ -326,7 +368,7 @@ test('POST /api/ai/suggest returns an AI department suggestion for the chat harn
       json: async () => ({
         message: {
           content: JSON.stringify({
-            department: 'Grafiska produktionsgruppen',
+            department: 'Grafikgruppen',
             reason: 'Det handlar om en banner.',
             confidence: 0.96,
           }),
@@ -340,9 +382,9 @@ test('POST /api/ai/suggest returns an AI department suggestion for the chat harn
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.suggestion.department, 'Grafiska produktionsgruppen');
+  assert.equal(response.body.suggestion.department, 'Grafikgruppen');
   assert.equal(response.body.suggestion.reason, 'Det handlar om en banner.');
-  assert.equal(response.body.availableDepartments.includes('Grafiska produktionsgruppen'), true);
+  assert.equal(response.body.availableDepartments.includes('Grafikgruppen'), true);
 });
 
 test('POST /api/ai/suggest forwards previous chat messages to Ollama', async () => {
@@ -356,7 +398,7 @@ test('POST /api/ai/suggest forwards previous chat messages to Ollama', async () 
         json: async () => ({
           message: {
             content: JSON.stringify({
-              department: 'IT-support',
+              department: 'IT-support / Mjukvara',
               reason: 'Tidigare meddelanden nämner dator och inloggning.',
               confidence: 0.88,
             }),
@@ -379,7 +421,7 @@ test('POST /api/ai/suggest forwards previous chat messages to Ollama', async () 
   assert.equal(capturedBody.messages.some((message) => message.content.includes('inloggningen på datorn')), true);
   assert.equal(capturedBody.options.num_ctx, 30000);
   assert.equal(capturedBody.format, undefined);
-  assert.equal(response.body.suggestion.department, 'IT-support');
+  assert.equal(response.body.suggestion.department, 'IT-support / Mjukvara');
 });
 
 test('POST /api/ai/suggest uses a free-chat prompt with recommendation commands', async () => {
@@ -393,7 +435,7 @@ test('POST /api/ai/suggest uses a free-chat prompt with recommendation commands'
         json: async () => ({
           message: {
             content: JSON.stringify({
-              department: 'Grafiska produktionsgruppen',
+              department: 'Grafikgruppen',
               reason: 'Det gäller en grafisk beställning.',
               confidence: 0.91,
             }),
@@ -470,7 +512,7 @@ test('POST /api/ai/suggest extracts a department command from free-form chat', a
       ok: true,
       json: async () => ({
         message: {
-          content: 'Det låter som en grafisk beställning.\n[[recommend department="Grafiska produktionsgruppen" confidence="0.91" reason="Det gäller en banner."]]',
+          content: 'Det låter som en grafisk beställning.\n[[recommend department="Grafikgruppen" confidence="0.91" reason="Det gäller en banner."]]',
         },
       }),
     }),
@@ -481,7 +523,7 @@ test('POST /api/ai/suggest extracts a department command from free-form chat', a
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.suggestion.department, 'Grafiska produktionsgruppen');
+  assert.equal(response.body.suggestion.department, 'Grafikgruppen');
   assert.equal(response.body.suggestion.reason, 'Det gäller en banner.');
   assert.equal(response.body.reply, 'Det låter som en grafisk beställning.');
 });
@@ -493,7 +535,7 @@ test('POST /api/ai/suggest accepts a slightly malformed department command at th
       ok: true,
       json: async () => ({
         message: {
-          content: 'Jag tror att det här är en grafisk sak.\n[[recommend department="Grafiska produktionsgruppen" confidence="0.85" reason="Det gäller en bild."]',
+          content: 'Jag tror att det här är en grafisk sak.\n[[recommend department="Grafikgruppen" confidence="0.85" reason="Det gäller en bild."]',
         },
       }),
     }),
@@ -504,8 +546,29 @@ test('POST /api/ai/suggest accepts a slightly malformed department command at th
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.suggestion.department, 'Grafiska produktionsgruppen');
+  assert.equal(response.body.suggestion.department, 'Grafikgruppen');
   assert.equal(response.body.reply, 'Jag tror att det här är en grafisk sak.');
+});
+
+test('POST /api/ai/suggest maps the legacy graphics department name to Grafikgruppen', async () => {
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async () => ({
+      ok: true,
+      json: async () => ({
+        message: {
+          content: 'Det låter grafiskt.\n[[recommend department="Grafiska produktionsgruppen" confidence="0.85" reason="Det gäller en bild."]]',
+        },
+      }),
+    }),
+  });
+
+  const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Jag skulle vilja beställa någon bild',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.suggestion.department, 'Grafikgruppen');
 });
 
 test('POST /api/ai/suggest returns no suggestion if Ollama fails', async () => {

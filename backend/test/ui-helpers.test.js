@@ -3,6 +3,7 @@ const { test } = require('node:test');
 
 const {
   getDefaultOrderDeadline,
+  getOrderFormBackConfig,
   shouldShowProposalUploadButton,
   suggestDepartmentFromMessage,
 } = require('../../ui-helpers');
@@ -29,6 +30,14 @@ test('getDefaultOrderDeadline returns tomorrow in yyyy-mm-dd format', () => {
 test('suggestDepartmentFromMessage routes graphics requests to the graphics group', () => {
   assert.equal(
     suggestDepartmentFromMessage('Vi behöver en affisch och en banner till kampanjen.'),
-    'Grafiska produktionsgruppen',
+    'Grafikgruppen',
   );
+});
+
+test('getOrderFormBackConfig returns department selection for manual orders', () => {
+  assert.deepEqual(getOrderFormBackConfig('manual'), {
+    icon: 'fa-arrow-left',
+    label: 'Tillbaka till avdelningar',
+    targetPage: 'select-department',
+  });
 });

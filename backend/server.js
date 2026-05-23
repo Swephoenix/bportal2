@@ -15,9 +15,49 @@ const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
 const DEPARTMENTS = [
   'Frågor om partiet',
   'Valorganisation',
-  'Grafiska produktionsgruppen',
-  'IT-support',
+  'Utskick i Sociala medier',
+  'Skribentgruppen',
+  'Filmgruppen',
+  'Juridikgruppen',
+  'Sekretessavtal',
+  'Beställa brochyrer',
+  'Grafikgruppen',
+  'Medlemsutskick',
+  'Medlemsregister',
+  'IT-support / Mjukvara',
+  'Hemsidan',
+  'Marknad',
+  'HR / Personalfrågor',
 ];
+
+const DEPARTMENT_EMAILS = {
+  'Frågor om partiet': 'fragor-om-partiet@example.com',
+  Valorganisation: 'valorganisation@example.com',
+  'Utskick i Sociala medier': 'sociala-medier@example.com',
+  Skribentgruppen: 'skribentgruppen@example.com',
+  Filmgruppen: 'filmgruppen@example.com',
+  Juridikgruppen: 'juridikgruppen@example.com',
+  Sekretessavtal: 'sekretessavtal@example.com',
+  'Beställa brochyrer': 'brochyrer@example.com',
+  Grafikgruppen: 'grafikgruppen@example.com',
+  Medlemsutskick: 'medlemsutskick@example.com',
+  Medlemsregister: 'medlemsregister@example.com',
+  'IT-support / Mjukvara': 'it-support@example.com',
+  Hemsidan: 'hemsidan@example.com',
+  Marknad: 'marknad@example.com',
+  'HR / Personalfrågor': 'hr@example.com',
+};
+
+const DEPARTMENT_ALIASES = {
+  'grafiska produktionsgruppen': 'Grafikgruppen',
+  'grafikproduktion': 'Grafikgruppen',
+  'it-support': 'IT-support / Mjukvara',
+};
+
+const DEFAULT_DEPARTMENT_RECORDS = DEPARTMENTS.map((name) => ({
+  name,
+  email: DEPARTMENT_EMAILS[name],
+}));
 
 const USERS = [
   { username: 'user', password: 'user', user: { name: 'Personal', role: 'orderer' } },
@@ -25,9 +65,9 @@ const USERS = [
 ];
 
 const DEMO_ORDERS = [
-  { from: 'Erik (Kommunikation)', msg: 'Design av ny flyer för sommarkampanjen.', deadline: '2024-06-15', dept: 'Grafiska produktionsgruppen', status: 'Väntar' },
-  { from: 'Anna (HR)', msg: 'Uppdatera profilbilder för ledningsgruppen.', deadline: '2024-06-20', dept: 'Grafiska produktionsgruppen', status: 'Pågående' },
-  { from: 'Marknadsavdelningen', msg: 'Ta fram 3 st olika banners för Facebook-annonsering.', deadline: '', dept: 'Grafiska produktionsgruppen', status: 'Ny' },
+  { from: 'Erik (Kommunikation)', msg: 'Design av ny flyer för sommarkampanjen.', deadline: '2024-06-15', dept: 'Grafikgruppen', deptEmail: DEPARTMENT_EMAILS.Grafikgruppen, status: 'Väntar' },
+  { from: 'Anna (HR)', msg: 'Uppdatera profilbilder för ledningsgruppen.', deadline: '2024-06-20', dept: 'Grafikgruppen', deptEmail: DEPARTMENT_EMAILS.Grafikgruppen, status: 'Pågående' },
+  { from: 'Marknadsavdelningen', msg: 'Ta fram 3 st olika banners för Facebook-annonsering.', deadline: '', dept: 'Grafikgruppen', deptEmail: DEPARTMENT_EMAILS.Grafikgruppen, status: 'Ny' },
 ];
 
 function formatDate(date = new Date()) {
@@ -43,6 +83,7 @@ function isDateString(value) {
 
 function createDefaultState() {
   return {
+    departments: DEFAULT_DEPARTMENT_RECORDS.map((department) => ({ ...department })),
     orders: DEMO_ORDERS.map((order) => ({
       id: crypto.randomUUID(),
       createdAt: formatDate(),
@@ -55,7 +96,12 @@ function loadState(dataFile = DATA_FILE) {
   try {
     const raw = fs.readFileSync(dataFile, 'utf8');
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed.orders)) return parsed;
+    if (Array.isArray(parsed.orders)) {
+      return {
+        departments: normalizeDepartmentRecords(parsed.departments),
+        orders: parsed.orders,
+      };
+    }
   } catch (error) {
     if (error.code !== 'ENOENT') {
       console.warn(`Could not read ${dataFile}: ${error.message}`);
@@ -63,6 +109,45 @@ function loadState(dataFile = DATA_FILE) {
   }
 
   return createDefaultState();
+}
+
+function normalizeDepartmentRecords(records) {
+  if (!Array.isArray(records)) {
+    return DEFAULT_DEPARTMENT_RECORDS.map((department) => ({ ...department }));
+  }
+
+  const normalized = [];
+  const seen = new Set();
+
+  records.forEach((record) => {
+    const name = String(record && record.name || '').trim();
+    const email = String(record && record.email || '').trim();
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) return;
+    normalized.push({
+      name,
+      email: email || 'placeholder@example.com',
+    });
+    seen.add(key);
+  });
+
+  return normalized.length > 0
+    ? normalized
+    : DEFAULT_DEPARTMENT_RECORDS.map((department) => ({ ...department }));
+}
+
+function getDepartmentRecords(state) {
+  return normalizeDepartmentRecords(state && state.departments);
+}
+
+function getDepartmentNames(state) {
+  return getDepartmentRecords(state).map((department) => department.name);
+}
+
+function getDepartmentEmails(state) {
+  return Object.fromEntries(
+    getDepartmentRecords(state).map((department) => [department.name, department.email]),
+  );
 }
 
 function saveState(state, dataFile = DATA_FILE) {
@@ -102,7 +187,7 @@ function parseBody(body) {
   }
 }
 
-function validateOrder(payload) {
+function validateOrder(payload, state) {
   const details = [];
 
   if (!payload || typeof payload !== 'object') {
@@ -110,7 +195,7 @@ function validateOrder(payload) {
   }
 
   if (!String(payload.msg || '').trim()) details.push('msg_required');
-  if (!DEPARTMENTS.includes(payload.dept)) details.push('dept_invalid');
+  if (!normalizeDepartmentName(payload.dept, state)) details.push('dept_invalid');
   if (String(payload.deadline || '').trim() && !isDateString(payload.deadline)) {
     details.push('deadline_invalid');
   }
@@ -152,14 +237,18 @@ function safeAttachments(payload) {
   }));
 }
 
-function safeOrder(payload) {
+function safeOrder(payload, state) {
+  const department = normalizeDepartmentName(payload.dept, state);
+  const departmentEmails = getDepartmentEmails(state);
+
   return {
     id: crypto.randomUUID(),
     createdAt: formatDate(),
     from: String(payload.from || 'Okänd').trim() || 'Okänd',
     msg: String(payload.msg).trim(),
     deadline: String(payload.deadline || '').trim(),
-    dept: payload.dept,
+    dept: department,
+    deptEmail: departmentEmails[department],
     status: 'Ny',
     attachments: safeAttachments(payload),
     proposals: [],
@@ -232,19 +321,22 @@ function findProposal(order, proposalId) {
     : null;
 }
 
-function normalizeDepartmentName(value) {
+function normalizeDepartmentName(value, state) {
   const text = String(value || '').trim().toLowerCase();
-  return DEPARTMENTS.find((department) => department.toLowerCase() === text) || null;
+  const departments = getDepartmentNames(state);
+  const alias = DEPARTMENT_ALIASES[text];
+  if (alias && departments.includes(alias)) return alias;
+  return departments.find((department) => department.toLowerCase() === text) || null;
 }
 
-function extractAiSuggestion(content) {
+function extractAiSuggestion(content, state) {
   if (!content) return null;
 
   const text = String(content).trim();
 
   try {
     const parsed = JSON.parse(text);
-    const department = normalizeDepartmentName(parsed.department);
+    const department = normalizeDepartmentName(parsed.department, state);
     return {
       department,
       reason: String(parsed.reason || '').trim(),
@@ -254,7 +346,7 @@ function extractAiSuggestion(content) {
   } catch {
     const commandMatch = text.match(/\[\[\s*recommend\s+department="([^"]+)"(?:\s+confidence="([^"]+)")?(?:\s+reason="([^"]*)")?\s*\]\]?\s*$/i);
     if (commandMatch) {
-      const department = normalizeDepartmentName(commandMatch[1]);
+      const department = normalizeDepartmentName(commandMatch[1], state);
       const reply = text.slice(0, commandMatch.index).trim();
       return {
         department,
@@ -265,7 +357,7 @@ function extractAiSuggestion(content) {
     }
 
     const contentText = text.toLowerCase();
-    const department = DEPARTMENTS.find((entry) => contentText.includes(entry.toLowerCase()));
+    const department = getDepartmentNames(state).find((entry) => contentText.includes(entry.toLowerCase()));
     return {
       department: department || null,
       reason: department ? text : '',
@@ -275,24 +367,26 @@ function extractAiSuggestion(content) {
   }
 }
 
-function buildAiPrompt() {
+function buildAiPrompt(state) {
+  const departments = getDepartmentNames(state);
+
   return [
     'Du är en fri chattassistent i en beställningsportal.',
     'Du pratar med användaren som en hjälpsam människa, inte som ett formulär.',
-    `Tillåtna avdelningar: ${DEPARTMENTS.join(', ')}.`,
+    `Tillåtna avdelningar: ${departments.join(', ')}.`,
     'Svara fritt och naturligt på svenska. Du får småprata, svara på vardaglig fråga eller vardagliga frågor, ställa följdfrågor och vara konversationsmässig.',
     'Om användaren småpratar får du svara naturligt och kort.',
     'Ditt huvudmål är att hjälpa användaren vidare och, när det passar, rekommendera en avdelning av de tillåtna.',
     'Om du redan kan avgöra rätt avdelning, ställ inga följdfrågor. Säg det kort och vänligt i vanlig text och lägg sedan till exakt en kommando-rad på egen rad i slutet av svaret.',
     'Om användaren frågar varför du föreslog en avdelning, svara kort med motiveringen i vanlig text och rekommendera bara igen om det fortfarande är relevant.',
     'När du vill rekommendera en avdelning, lägg till exakt en kommando-rad på egen rad i slutet av svaret:',
-    '[[recommend department="Grafiska produktionsgruppen" confidence="0.93" reason="Kort motivering"]]',
+    '[[recommend department="Grafikgruppen" confidence="0.93" reason="Kort motivering"]]',
     'Byt ut department till en av de tillåtna avdelningarna och använd confidence mellan 0 och 1.',
     'Om du inte vill rekommendera någon avdelning, skriv bara vanlig text utan kommando.',
     'Exempel:',
     'Användare: Jag behöver hjälp med en banner.',
-    'Assistent: Det låter som att detta hör till Grafiska produktionsgruppen.',
-    '[[recommend department="Grafiska produktionsgruppen" confidence="0.94" reason="Det gäller en banner."]]',
+    'Assistent: Det låter som att detta hör till Grafikgruppen.',
+    '[[recommend department="Grafikgruppen" confidence="0.94" reason="Det gäller en banner."]]',
     'Användare: Hur mår du?',
     'Assistent: Jag mår bra, tack! Hur kan jag hjälpa dig vidare?',
   ].join('\n');
@@ -326,11 +420,13 @@ function latestUserMessage(messages) {
   return '';
 }
 
-async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch, model = OLLAMA_MODEL } = {}) {
+async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch, model = OLLAMA_MODEL, state } = {}) {
+  const departments = getDepartmentNames(state);
+
   if (typeof fetchFn !== 'function') {
     return {
       suggestion: null,
-      availableDepartments: DEPARTMENTS,
+      availableDepartments: departments,
       model,
       source: 'none',
       error: 'ollama_unavailable',
@@ -347,7 +443,7 @@ async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch,
         model,
         stream: false,
         messages: [
-          { role: 'system', content: buildAiPrompt() },
+          { role: 'system', content: buildAiPrompt(state) },
           ...messages,
         ],
         options: {
@@ -362,7 +458,7 @@ async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch,
     }
 
     const data = await response.json();
-    const suggestion = extractAiSuggestion(data && data.message && data.message.content);
+    const suggestion = extractAiSuggestion(data && data.message && data.message.content, state);
     if (suggestion && suggestion.department) {
       const reply = String(suggestion.reply || '').trim();
       return {
@@ -371,7 +467,7 @@ async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch,
           source: 'ollama',
         },
         reply,
-        availableDepartments: DEPARTMENTS,
+        availableDepartments: departments,
         model,
         source: 'ollama',
       };
@@ -381,7 +477,7 @@ async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch,
       return {
         suggestion: null,
         reply: suggestion.reply,
-        availableDepartments: DEPARTMENTS,
+        availableDepartments: departments,
         model,
         source: 'ollama',
       };
@@ -389,7 +485,7 @@ async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch,
   } catch (error) {
     return {
       suggestion: null,
-      availableDepartments: DEPARTMENTS,
+      availableDepartments: departments,
       model,
       source: 'none',
       error: error.message,
@@ -398,7 +494,7 @@ async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch,
 
   return {
     suggestion: null,
-    availableDepartments: DEPARTMENTS,
+    availableDepartments: departments,
     model,
     source: 'none',
   };
@@ -417,7 +513,7 @@ function createApp(options = {}) {
         statusCode: 204,
         headers: {
           'access-control-allow-origin': '*',
-          'access-control-allow-methods': 'GET,POST,OPTIONS',
+          'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
           'access-control-allow-headers': 'content-type',
         },
         body: '',
@@ -428,7 +524,27 @@ function createApp(options = {}) {
       return json(200, {
         ok: true,
         service: 'bportalen-backend',
-        departments: DEPARTMENTS,
+        departments: getDepartmentNames(state),
+        departmentEmails: getDepartmentEmails(state),
+      });
+    }
+
+    if (method === 'GET' && url.pathname === '/api/departments') {
+      return json(200, {
+        departments: getDepartmentRecords(state),
+      });
+    }
+
+    if (method === 'PUT' && url.pathname === '/api/departments') {
+      const payload = parseBody(body);
+      if (!payload) return json(400, { error: 'invalid_json' });
+
+      const departments = normalizeDepartmentRecords(payload.departments);
+      state.departments = departments;
+      if (persist) saveState(state, dataFile);
+
+      return json(200, {
+        departments,
       });
     }
 
@@ -446,9 +562,12 @@ function createApp(options = {}) {
 
     if (method === 'GET' && url.pathname === '/api/orders') {
       const dept = url.searchParams.get('dept');
+      const normalizedDept = dept ? normalizeDepartmentName(dept, state) : '';
       const from = url.searchParams.get('from');
+      if (dept && !normalizedDept) return json(200, { orders: [] });
+
       const orders = state.orders.filter((order) => (
-        (!dept || order.dept === dept)
+        (!dept || order.dept === normalizedDept || normalizeDepartmentName(order.dept, state) === normalizedDept)
         && (!from || order.from === from)
       ));
 
@@ -459,12 +578,12 @@ function createApp(options = {}) {
       const payload = parseBody(body);
       if (!payload) return json(400, { error: 'invalid_json' });
 
-      const details = validateOrder(payload);
+      const details = validateOrder(payload, state);
       if (details.length > 0) {
         return json(400, { error: 'invalid_order', details });
       }
 
-      const order = safeOrder(payload);
+      const order = safeOrder(payload, state);
       state.orders.unshift(order);
       if (persist) saveState(state, dataFile);
 
@@ -483,6 +602,7 @@ function createApp(options = {}) {
       const result = await getAiDepartmentSuggestion(messages, {
         fetchFn: options.ollamaFetch || globalThis.fetch?.bind(globalThis),
         model: options.ollamaModel || OLLAMA_MODEL,
+        state,
       });
 
       return json(200, result);
@@ -626,6 +746,8 @@ module.exports = {
   createApp,
   createDefaultState,
   DEPARTMENTS,
+  DEPARTMENT_EMAILS,
+  DEFAULT_DEPARTMENT_RECORDS,
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_SIZE,
 };
