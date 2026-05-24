@@ -144,6 +144,20 @@ test('PUT /api/departments updates departments used by orders', async () => {
   assert.equal(created.body.order.deptEmail, 'chefen@example.com');
 });
 
+test('PUT /api/departments keeps Grafikgruppen even if it is omitted', async () => {
+  const app = freshApp();
+  const updated = await request(app, 'PUT', '/api/departments', {
+    departments: [
+      { name: 'Chefens avdelning', email: 'chefen@example.com' },
+    ],
+  });
+
+  assert.equal(updated.statusCode, 200);
+  assert.equal(updated.body.departments.some((department) => (
+    department.name === 'Grafikgruppen' && department.email === 'grafikgruppen@example.com'
+  )), true);
+});
+
 test('OPTIONS /api/orders allows browser preflight requests', async () => {
   const app = freshApp();
   const response = await app.inject({
@@ -706,7 +720,7 @@ test('POST /api/ai/suggest includes the currently configured department list in 
   assert.match(systemPrompt, /Tillgängliga avdelningar:/);
   assert.match(systemPrompt, /- Specialteamet/);
   assert.match(systemPrompt, /- Medlemsfrågor/);
-  assert.doesNotMatch(systemPrompt, /- Grafikgruppen/);
+  assert.match(systemPrompt, /- Grafikgruppen/);
 });
 
 test('POST /api/ai/suggest can return a friendly reply without a department', async () => {

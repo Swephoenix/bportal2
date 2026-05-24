@@ -4,6 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const PORT = Number(process.env.PORT || 3001);
+const HOST = process.env.HOST || '0.0.0.0';
 const ROOT_DIR = path.resolve(__dirname, '..');
 const DATA_FILE = process.env.BPORTAL_DATA_FILE || path.join(__dirname, 'data', 'orders.json');
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
@@ -55,6 +56,8 @@ const DEPARTMENT_EMAILS = {
   'HR / Personalfrågor': 'hr@example.com',
 };
 
+const PROTECTED_DEPARTMENT_NAME = 'Grafikgruppen';
+
 const DEPARTMENT_ALIASES = {
   'grafiska produktionsgruppen': 'Grafikgruppen',
   'grafikproduktion': 'Grafikgruppen',
@@ -65,6 +68,11 @@ const DEFAULT_DEPARTMENT_RECORDS = DEPARTMENTS.map((name) => ({
   name,
   email: DEPARTMENT_EMAILS[name],
 }));
+
+const PROTECTED_DEPARTMENT_RECORD = {
+  name: PROTECTED_DEPARTMENT_NAME,
+  email: DEPARTMENT_EMAILS[PROTECTED_DEPARTMENT_NAME],
+};
 
 const USERS = [
   { username: 'user', password: 'user', user: { name: 'Personal', role: 'orderer' } },
@@ -138,9 +146,15 @@ function normalizeDepartmentRecords(records) {
     seen.add(key);
   });
 
-  return normalized.length > 0
-    ? normalized
-    : DEFAULT_DEPARTMENT_RECORDS.map((department) => ({ ...department }));
+  if (normalized.length === 0) {
+    return DEFAULT_DEPARTMENT_RECORDS.map((department) => ({ ...department }));
+  }
+
+  if (!seen.has(PROTECTED_DEPARTMENT_NAME.toLowerCase())) {
+    normalized.push({ ...PROTECTED_DEPARTMENT_RECORD });
+  }
+
+  return normalized;
 }
 
 function getDepartmentRecords(state) {
@@ -1092,7 +1106,9 @@ function createApp(options = {}) {
         body,
       };
     },
-    listen(port = PORT, callback) {
+    listen(port = PORT, hostOrCallback = HOST, callback) {
+      const host = typeof hostOrCallback === 'function' ? undefined : hostOrCallback;
+      const onListening = typeof hostOrCallback === 'function' ? hostOrCallback : callback;
       const server = http.createServer((req, res) => {
         let body = '';
         const requestAbortController = new AbortController();
@@ -1138,15 +1154,17 @@ function createApp(options = {}) {
         });
       });
 
-      return server.listen(port, callback);
+      return host
+        ? server.listen(port, host, onListening)
+        : server.listen(port, onListening);
     },
   };
 }
 
 if (require.main === module) {
   const app = createApp({ persist: true });
-  app.listen(PORT, () => {
-    console.log(`Bportalen backend kör på http://localhost:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`Bportalen backend kör på http://${HOST}:${PORT}`);
     if (OLLAMA_WARMUP) {
       startOllamaWarmupLoop();
     }

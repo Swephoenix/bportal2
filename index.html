@@ -375,6 +375,7 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mottagare</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Meddelande</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bilagor</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Respons från avdelning</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase text-red-600">Deadline</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                     </tr>
@@ -529,6 +530,8 @@
         let departmentDraftRecords = [];
 
         const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:3001' : '';
+        const AUTH_STORAGE_KEY = 'bportal_current_user_v1';
+        const PROTECTED_DEPARTMENT_NAME = 'Grafikgruppen';
         const MAX_ATTACHMENTS = 5;
         const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
         const BportalUI = window.BportalUI || {
@@ -582,6 +585,33 @@
         let currentReviewProposalId = "";
         const attachmentPreviewStore = new Map();
 
+        function isValidStoredUser(user) {
+            return Boolean(
+                user
+                && typeof user.name === 'string'
+                && ['orderer', 'graphics'].includes(user.role)
+            );
+        }
+
+        function saveCurrentUser(user) {
+            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+        }
+
+        function loadStoredUser() {
+            try {
+                const user = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null');
+                if (isValidStoredUser(user)) return user;
+            } catch {
+                // Ignore broken storage and require a fresh login.
+            }
+            localStorage.removeItem(AUTH_STORAGE_KEY);
+            return null;
+        }
+
+        function clearStoredUser() {
+            localStorage.removeItem(AUTH_STORAGE_KEY);
+        }
+
         // Demobeställningar för grafikgruppen
         const demoOrders = [
             { from: 'Erik (Kommunikation)', msg: 'Design av ny flyer för sommarkampanjen.', deadline: '2024-06-15', dept: 'Grafikgruppen', deptEmail: defaultDepartmentEmails['Grafikgruppen'], status: 'Väntar' },
@@ -591,6 +621,10 @@
 
         function getDepartmentEmailMap() {
             return Object.fromEntries(departmentRecords.map((department) => [department.name, department.email]));
+        }
+
+        function isProtectedDepartment(department) {
+            return String(department && department.name || '').trim().toLowerCase() === PROTECTED_DEPARTMENT_NAME.toLowerCase();
         }
 
         function normalizeDepartmentRecords(records) {
@@ -606,7 +640,18 @@
                 seen.add(key);
             });
 
-            return normalized.length ? normalized : defaultDepartments.map((name) => ({ name, email: defaultDepartmentEmails[name] }));
+            if (!normalized.length) {
+                return defaultDepartments.map((name) => ({ name, email: defaultDepartmentEmails[name] }));
+            }
+
+            if (!seen.has(PROTECTED_DEPARTMENT_NAME.toLowerCase())) {
+                normalized.push({
+                    name: PROTECTED_DEPARTMENT_NAME,
+                    email: defaultDepartmentEmails[PROTECTED_DEPARTMENT_NAME]
+                });
+            }
+
+            return normalized;
         }
 
         function loadLocalDepartments() {
@@ -865,7 +910,7 @@
             return Array.isArray(order.proposals) && order.proposals.length ? order.proposals[0] : null;
         }
 
-        function renderProposalPanel(order, mode) {
+        function renderProposalPanel(order, mode, title = 'Förslag på remiss') {
             const proposal = latestProposal(order);
 
             if (!proposal) {
@@ -879,7 +924,7 @@
             return `
                 <div class="min-w-64 max-sm:min-w-0 space-y-3">
                     <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
-                        <div class="text-xs font-bold uppercase tracking-wide text-emerald-700">Förslag på remiss</div>
+                        <div class="text-xs font-bold uppercase tracking-wide text-emerald-700">${escapeHtml(title)}</div>
                         <div class="mt-1 text-sm text-gray-700">${escapeHtml(proposal.note)}</div>
                         <div class="mt-3">${renderAttachments(proposal.attachments)}</div>
                     </div>
@@ -1080,6 +1125,11 @@
                 }
             }
 
+            saveCurrentUser(currentUser);
+            showAuthenticatedUser();
+        }
+
+        function showAuthenticatedUser() {
             document.getElementById('login-page').classList.add('hidden');
             document.getElementById('main-header').classList.remove('hidden');
             document.getElementById('user-info').innerText = currentUser.name;
@@ -1088,6 +1138,7 @@
 
         function logout() {
             currentUser = null;
+            clearStoredUser();
             location.reload();
         }
 
@@ -1146,22 +1197,28 @@
 
             if (departmentEditMode) {
                 records.forEach((department, index) => {
+                    const protectedDepartment = isProtectedDepartment(department);
+                    const removeButton = protectedDepartment
+                        ? '<div class="rounded-lg bg-gray-50 px-3 py-2 text-center text-sm font-semibold text-gray-500">Kan inte tas bort</div>'
+                        : `
+                            <button type="button" onclick="removeDepartmentDraft(${index})" class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">
+                                <i class="fas fa-trash"></i>
+                                Ta bort
+                            </button>
+                        `;
                     const row = document.createElement('div');
                     row.className = 'rounded-xl border border-gray-200 bg-white p-4 shadow-sm';
                     row.innerHTML = `
                         <div class="space-y-3">
                             <div>
                                 <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Avdelning</label>
-                                <input type="text" value="${escapeHtml(department.name)}" oninput="updateDepartmentDraft(${index}, 'name', this.value)" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                                <input type="text" value="${escapeHtml(department.name)}" oninput="updateDepartmentDraft(${index}, 'name', this.value)" ${protectedDepartment ? 'readonly' : ''} class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 ${protectedDepartment ? 'bg-gray-50 text-gray-500' : ''}">
                             </div>
                             <div>
                                 <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Mejl</label>
                                 <input type="email" value="${escapeHtml(department.email)}" oninput="updateDepartmentDraft(${index}, 'email', this.value)" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
                             </div>
-                            <button type="button" onclick="removeDepartmentDraft(${index})" class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">
-                                <i class="fas fa-trash"></i>
-                                Ta bort
-                            </button>
+                            ${removeButton}
                         </div>
                     `;
                     grid.appendChild(row);
@@ -1199,6 +1256,10 @@
         }
 
         function removeDepartmentDraft(index) {
+            if (isProtectedDepartment(departmentDraftRecords[index])) {
+                alert('Grafikgruppen kan inte tas bort.');
+                return;
+            }
             departmentDraftRecords.splice(index, 1);
             renderDepartments();
         }
@@ -1218,6 +1279,11 @@
             const normalized = normalizeDepartmentRecords(departmentDraftRecords);
             if (normalized.length !== namedDrafts.length) {
                 alert('Kontrollera att varje avdelning har ett unikt namn.');
+                return;
+            }
+
+            if (!normalized.some(isProtectedDepartment)) {
+                alert('Grafikgruppen måste finnas kvar.');
                 return;
             }
 
@@ -1985,7 +2051,7 @@
             }
 
             if(sentOrders.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">Du har inte skickat några beställningar än.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">Du har inte skickat några beställningar än.</td></tr>';
                 return;
             }
 
@@ -1996,17 +2062,18 @@
                 tr.innerHTML = `
                     <td data-label="Mottagare" class="px-6 py-4 text-sm font-medium text-gray-900">${escapeHtml(o.dept)}</td>
                     <td data-label="Meddelande" class="px-6 py-4 text-sm text-gray-500">${escapeHtml(o.msg)}</td>
-                    <td data-label="Bilagor" class="px-6 py-4 text-sm">
-                        <div class="space-y-4">
-                            ${renderAttachments(o.attachments)}
-                            ${renderProposalPanel(o, 'orderer')}
-                        </div>
-                    </td>
+                    <td data-label="Bilagor" class="px-6 py-4 text-sm">${renderAttachments(o.attachments)}</td>
+                    <td data-label="Respons från avdelning" class="px-6 py-4 text-sm">${renderProposalPanel(o, 'orderer', 'Respons från avdelning')}</td>
                     <td data-label="Deadline" class="px-6 py-4 text-sm font-bold text-red-600">${escapeHtml(formatDate(o.deadline))}</td>
                     <td data-label="Status" class="px-6 py-4"><span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">${escapeHtml(o.status)}</span></td>
                 `;
                 tbody.appendChild(tr);
             });
+        }
+
+        currentUser = loadStoredUser();
+        if (currentUser) {
+            showAuthenticatedUser();
         }
     </script>
 </body>
