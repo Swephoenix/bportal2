@@ -53,6 +53,7 @@ const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
 
 let activeOllamaWarmupAbortController = null;
+let activeOllamaWarmupTimer = null;
 
 const DEPARTMENTS = [
   'Frågor om partiet',
@@ -175,17 +176,22 @@ function isDateString(value) {
 function createDefaultState() {
   return {
     departments: DEFAULT_DEPARTMENT_RECORDS.map((department) => ({ ...department })),
-    users: DEFAULT_USERS.map((entry) => ({
-      username: entry.username,
-      password: entry.password,
-      user: { ...entry.user },
-    })),
+    users: [],
     userSettings: {},
-    orders: DEMO_ORDERS.map((order) => ({
-      id: crypto.randomUUID(),
-      createdAt: formatDate(),
-      ...order,
-    })),
+    orders: [],
+    aiConfig: {
+      model: OLLAMA_MODEL,
+      numCtx: OLLAMA_NUM_CTX,
+      numPredict: OLLAMA_NUM_PREDICT,
+      warmup: false,
+    },
+    smtpConfig: {
+      host: process.env.SMTP_HOST || '',
+      port: Number(process.env.SMTP_PORT || 587),
+      user: process.env.SMTP_USER || '',
+      password: process.env.SMTP_PASSWORD || '',
+      from: process.env.SMTP_FROM || '',
+    },
   };
 }
 
@@ -199,6 +205,8 @@ function loadState(dataFile = DATA_FILE) {
         users: normalizeUsers(parsed.users),
         userSettings: normalizeUserSettingsMap(parsed.userSettings),
         orders: parsed.orders,
+        aiConfig: parsed.aiConfig || undefined,
+        smtpConfig: parsed.smtpConfig || undefined,
       };
     }
   } catch (error) {
@@ -236,8 +244,7 @@ function isBportalAdminEmail(email, adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
 }
 
 function normalizeAmbCentralRole(role, email = '', adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
-  const r = String(role || '').trim().toLowerCase();
-  if (isBportalAdminEmail(email, adminEmails) || r === 'globaladmin') return 'admin';
+  if (isBportalAdminEmail(email, adminEmails)) return 'admin';
   return 'member';
 }
 
@@ -567,6 +574,72 @@ function getDepartmentPromptRows(state) {
 function saveState(state, dataFile = DATA_FILE) {
   fs.mkdirSync(path.dirname(dataFile), { recursive: true });
   fs.writeFileSync(dataFile, `${JSON.stringify(state, null, 2)}\n`);
+}
+
+function updateEnvFile(updates = {}) {
+  const keys = new Set(Object.keys(updates));
+  if (!keys.size) return;
+  try {
+    const lines = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8').split('\n') : [];
+    const updated = [];
+    const written = new Set();
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) {
+        updated.push(line);
+        continue;
+      }
+      const eq = trimmed.indexOf('=');
+      if (eq === -1) {
+        updated.push(line);
+        continue;
+      }
+      const key = trimmed.slice(0, eq).trim();
+      if (keys.has(key)) {
+        updated.push(`${key}=${updates[key]}`);
+        written.add(key);
+      } else {
+        updated.push(line);
+      }
+    }
+
+    for (const key of keys) {
+      if (!written.has(key)) {
+        updated.push(`${key}=${updates[key]}`);
+      }
+    }
+
+    fs.writeFileSync(envPath, updated.join('\n') + '\n');
+  } catch (error) {
+    console.warn(`Kunde inte uppdatera .env: ${error.message}`);
+  }
+}
+
+function getAiConfig(state) {
+  const cfg = state && state.aiConfig;
+  return {
+    model: (cfg && cfg.model) || OLLAMA_MODEL,
+    numCtx: (cfg && cfg.numCtx) || OLLAMA_NUM_CTX,
+    numPredict: (cfg && cfg.numPredict) || OLLAMA_NUM_PREDICT,
+    warmup: cfg && typeof cfg.warmup === 'boolean' ? cfg.warmup : false,
+  };
+}
+
+function getSmtpConfig(state) {
+  const cfg = state && state.smtpConfig;
+  return {
+    host: (cfg && cfg.host) || process.env.SMTP_HOST || '',
+    port: (cfg && cfg.port) || Number(process.env.SMTP_PORT || 587),
+    user: (cfg && cfg.user) || process.env.SMTP_USER || '',
+    password: (cfg && cfg.password) || process.env.SMTP_PASSWORD || '',
+    from: (cfg && cfg.from) || process.env.SMTP_FROM || '',
+  };
+}
+
+function smtpConfigPublic(state) {
+  const cfg = getSmtpConfig(state);
+  return { host: cfg.host, port: cfg.port, user: cfg.user, from: cfg.from, hasPassword: Boolean(cfg.password) };
 }
 
 function json(statusCode, body, headers = {}) {
@@ -1095,12 +1168,12 @@ function escapeEmailLine(value) {
   return String(value || '').replace(/[\r\n]+/g, ' ').trim();
 }
 
-async function sendMail({ to, subject, text, html }) {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 587);
-  const from = process.env.SMTP_FROM || 'bportalen@localhost';
-  const username = process.env.SMTP_USER || from;
-  const password = process.env.SMTP_PASSWORD || '';
+async function sendMail({ to, subject, text, html }, smtpOverrides = null) {
+  const host = smtpOverrides ? smtpOverrides.host : process.env.SMTP_HOST;
+  const port = smtpOverrides ? smtpOverrides.port : Number(process.env.SMTP_PORT || 587);
+  const from = smtpOverrides ? smtpOverrides.from : (process.env.SMTP_FROM || 'bportalen@localhost');
+  const username = smtpOverrides ? smtpOverrides.user : (process.env.SMTP_USER || from);
+  const password = smtpOverrides ? smtpOverrides.password : (process.env.SMTP_PASSWORD || '');
   const secure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465;
 
   if (!host || !username || !password) {
@@ -1171,6 +1244,54 @@ async function sendMail({ to, subject, text, html }) {
   await smtpCommand(socket, 'QUIT').catch(() => {});
   socket.end();
   return true;
+}
+
+async function testSmtpConnection(smtpConfig) {
+  const { host, port, user, password } = smtpConfig;
+  if (!host || !user || !password) {
+    return { ok: false, error: 'missing_config', message: 'SMTP är inte fullständigt konfigurerat.' };
+  }
+
+  const secure = port === 465;
+  let socket;
+
+  try {
+    socket = secure
+      ? tls.connect({ host, port, servername: host, timeout: 10000 })
+      : net.createConnection({ host, port, timeout: 10000 });
+
+    await new Promise((resolve, reject) => {
+      socket.once('connect', resolve);
+      socket.once('error', reject);
+      const to = setTimeout(() => reject(new Error('timeout')), 10000);
+      socket.once('connect', () => clearTimeout(to));
+    });
+
+    await smtpCommand(socket);
+    await smtpCommand(socket, `EHLO ${process.env.SMTP_HELO || 'localhost'}`);
+    if (!secure) {
+      await smtpCommand(socket, 'STARTTLS');
+      socket = tls.connect({ socket, servername: host });
+      await new Promise((resolve, reject) => {
+        socket.once('secureConnect', resolve);
+        socket.once('error', reject);
+        const to = setTimeout(() => reject(new Error('timeout')), 10000);
+        socket.once('secureConnect', () => clearTimeout(to));
+      });
+      await smtpCommand(socket, `EHLO ${process.env.SMTP_HELO || 'localhost'}`);
+    }
+    await smtpCommand(socket, 'AUTH LOGIN');
+    await smtpCommand(socket, Buffer.from(user, 'utf8').toString('base64'));
+    await smtpCommand(socket, Buffer.from(password, 'utf8').toString('base64'));
+    await smtpCommand(socket, 'QUIT').catch(() => {});
+    socket.end();
+    return { ok: true, message: 'SMTP-anslutning lyckades.' };
+  } catch (error) {
+    if (socket) {
+      try { socket.end(); } catch (_) {}
+    }
+    return { ok: false, error: 'connection_failed', message: error.message };
+  }
 }
 
 function notifyByEmail(message) {
@@ -1426,9 +1547,10 @@ function latestUserMessage(messages) {
   return '';
 }
 
-function buildOllamaChatBody(messages, { model = OLLAMA_MODEL, state, stream: streamEnabled = false } = {}) {
+function buildOllamaChatBody(messages, { model, state, stream: streamEnabled = false } = {}) {
+  const config = getAiConfig(state);
   return {
-    model,
+    model: model || config.model,
     stream: streamEnabled,
     keep_alive: ollamaKeepAliveValue(),
     messages: [
@@ -1437,8 +1559,8 @@ function buildOllamaChatBody(messages, { model = OLLAMA_MODEL, state, stream: st
     ],
     options: {
       temperature: 0.1,
-      num_ctx: OLLAMA_NUM_CTX,
-      num_predict: OLLAMA_NUM_PREDICT,
+      num_ctx: config.numCtx,
+      num_predict: config.numPredict,
     },
   };
 }
@@ -1508,7 +1630,16 @@ function startOllamaWarmupLoop({ fetchFn = globalThis.fetch, model = OLLAMA_MODE
   if (typeof timer.unref === 'function') {
     timer.unref();
   }
+  activeOllamaWarmupTimer = timer;
   return timer;
+}
+
+function stopOllamaWarmupLoop() {
+  abortOllamaWarmup();
+  if (activeOllamaWarmupTimer) {
+    clearInterval(activeOllamaWarmupTimer);
+    activeOllamaWarmupTimer = null;
+  }
 }
 
 function stripRecommendationCommand(text) {
@@ -1898,12 +2029,140 @@ function createApp(options = {}) {
     }
 
     if (method === 'GET' && url.pathname === '/api/ai/status') {
+      const config = getAiConfig(state);
       const result = await getAiModelStatus({
         fetchFn: options.ollamaFetch || globalThis.fetch?.bind(globalThis),
-        model: options.ollamaModel || OLLAMA_MODEL,
+        model: config.model,
       });
 
       return json(200, result);
+    }
+
+    if (method === 'GET' && url.pathname === '/api/ai/models') {
+      try {
+        const fetchFn = options.ollamaFetch || globalThis.fetch?.bind(globalThis);
+        if (typeof fetchFn !== 'function') {
+          return json(200, { models: [], error: 'fetch_unavailable' });
+        }
+        const response = await fetchFn(`${OLLAMA_BASE_URL}/api/tags`, {
+          headers: { accept: 'application/json' },
+        });
+        if (!response.ok) {
+          throw new Error(`ollama_http_${response.status}`);
+        }
+        const data = await response.json();
+        const models = (data.models || []).map((m) => m.name).filter(Boolean);
+        return json(200, { models });
+      } catch (error) {
+        return json(200, { models: [], error: error.message });
+      }
+    }
+
+    if (method === 'GET' && url.pathname === '/api/ai/config') {
+      return json(200, { config: getAiConfig(state) });
+    }
+
+    if (method === 'PUT' && url.pathname === '/api/ai/config') {
+      if (!requestUser || requestUser.role !== 'admin') return json(403, { error: 'admin_required' });
+
+      const payload = parseBody(body);
+      if (!payload) return json(400, { error: 'invalid_json' });
+
+      const current = getAiConfig(state);
+      const updated = {
+        model: typeof payload.model === 'string' && payload.model.trim() ? payload.model.trim() : current.model,
+        numCtx: typeof payload.numCtx === 'number' ? payload.numCtx : current.numCtx,
+        numPredict: typeof payload.numPredict === 'number' ? payload.numPredict : current.numPredict,
+        warmup: typeof payload.warmup === 'boolean' ? payload.warmup : current.warmup,
+      };
+
+      if (updated.warmup && !current.warmup) {
+        startOllamaWarmupLoop({
+          fetchFn: options.ollamaFetch || globalThis.fetch?.bind(globalThis),
+          model: updated.model,
+        });
+      } else if (!updated.warmup && current.warmup) {
+        stopOllamaWarmupLoop();
+      }
+
+      state.aiConfig = updated;
+      if (persist) saveState(state, dataFile);
+
+      return json(200, { config: updated });
+    }
+
+    if (method === 'GET' && url.pathname === '/api/admin/smtp/config') {
+      if (!requestUser || requestUser.role !== 'admin') return json(403, { error: 'admin_required' });
+      return json(200, { config: smtpConfigPublic(state) });
+    }
+
+    if (method === 'PUT' && url.pathname === '/api/admin/smtp/config') {
+      if (!requestUser || requestUser.role !== 'admin') return json(403, { error: 'admin_required' });
+
+      const payload = parseBody(body);
+      if (!payload) return json(400, { error: 'invalid_json' });
+
+      const current = getSmtpConfig(state);
+      const updated = {
+        host: typeof payload.host === 'string' && payload.host.trim() ? payload.host.trim() : current.host,
+        port: typeof payload.port === 'number' ? payload.port : current.port,
+        user: typeof payload.user === 'string' && payload.user.trim() ? payload.user.trim() : current.user,
+        password: typeof payload.password === 'string' && payload.password.trim() ? payload.password.trim() : current.password,
+        from: typeof payload.from === 'string' && payload.from.trim() ? payload.from.trim() : current.from,
+      };
+
+      state.smtpConfig = updated;
+      process.env.SMTP_HOST = updated.host;
+      process.env.SMTP_PORT = String(updated.port);
+      process.env.SMTP_USER = updated.user;
+      if (payload.password) process.env.SMTP_PASSWORD = updated.password;
+      process.env.SMTP_FROM = updated.from;
+      if (persist) saveState(state, dataFile);
+      updateEnvFile({
+        SMTP_HOST: updated.host,
+        SMTP_PORT: String(updated.port),
+        SMTP_USER: updated.user,
+        SMTP_PASSWORD: updated.password,
+        SMTP_FROM: updated.from,
+      });
+
+      return json(200, { config: smtpConfigPublic(state) });
+    }
+
+    if (method === 'POST' && url.pathname === '/api/admin/smtp/test') {
+      if (!requestUser || requestUser.role !== 'admin') return json(403, { error: 'admin_required' });
+
+      const payload = parseBody(body);
+      const cfg = payload ? {
+        host: payload.host || getSmtpConfig(state).host,
+        port: payload.port || getSmtpConfig(state).port,
+        user: payload.user || getSmtpConfig(state).user,
+        password: payload.password || getSmtpConfig(state).password,
+      } : getSmtpConfig(state);
+
+      const result = await testSmtpConnection(cfg);
+      return json(result.ok ? 200 : 400, result);
+    }
+
+    if (method === 'POST' && url.pathname === '/api/admin/smtp/test-send') {
+      if (!requestUser || requestUser.role !== 'admin') return json(403, { error: 'admin_required' });
+
+      const payload = parseBody(body);
+      const to = payload && payload.to ? String(payload.to).trim() : '';
+      if (!to) return json(400, { error: 'missing_recipient', message: 'Ange en mottagare.' });
+
+      const cfg = getSmtpConfig(state);
+
+      try {
+        await sendMail({
+          to,
+          subject: 'Testmejl från Beställningsportalen',
+          text: 'Detta är ett testmejl från Beställningsportalen. Om du ser detta fungerar SMTP-konfigurationen korrekt.',
+        }, cfg);
+        return json(200, { ok: true, message: `Testmejl skickat till ${to}.` });
+      } catch (error) {
+        return json(400, { ok: false, error: 'send_failed', message: error.message });
+      }
     }
 
     if (method === 'GET' && url.pathname === '/config.js') {
@@ -1964,6 +2223,27 @@ function createApp(options = {}) {
       return json(200, {
         users: listUserEntriesFromDb(state, adminEmails).map(publicUserEntry),
       });
+    }
+
+    if (method === 'POST' && url.pathname === '/api/admin/sync-staff') {
+      if (!requestUser || requestUser.role !== 'admin') return json(403, { error: 'admin_required' });
+
+      const token = bearerTokenFromHeaders(headers);
+      if (!token) return json(401, { error: 'missing_token' });
+
+      const directory = await ambCentralRequest('/api/staff/directory', {
+        apiUrl: options.ambCentralApiUrl || AMBCENTRAL_API_URL,
+        fetchFn: options.ambCentralFetch || globalThis.fetch?.bind(globalThis),
+        token,
+      });
+
+      if (!directory.ok) return json(directory.status, directory.data);
+
+      const staffUsers = Array.isArray(directory.data.users) ? directory.data.users : [];
+      const synced = syncAmbCentralStaffUsers(state, staffUsers, adminEmails);
+      if (persist) saveState(state, dataFile);
+
+      return json(200, { users: synced });
     }
 
     if (method === 'POST' && url.pathname === '/api/users') {
@@ -2162,10 +2442,12 @@ function createApp(options = {}) {
         return json(400, { error: 'message_required' });
       }
 
+      const config = getAiConfig(state);
+
       if (payload.stream) {
         return getAiDepartmentSuggestionStream(messages, {
           fetchFn: options.ollamaFetch || globalThis.fetch?.bind(globalThis),
-          model: options.ollamaModel || OLLAMA_MODEL,
+          model: config.model,
           state,
           signal,
         });
@@ -2173,7 +2455,7 @@ function createApp(options = {}) {
 
       const result = await getAiDepartmentSuggestion(messages, {
         fetchFn: options.ollamaFetch || globalThis.fetch?.bind(globalThis),
-        model: options.ollamaModel || OLLAMA_MODEL,
+        model: config.model,
         state,
         signal,
       });
@@ -2396,9 +2678,6 @@ if (require.main === module) {
   const app = createApp({ persist: true });
   app.listen(PORT, HOST, () => {
     console.log(`Bportalen backend kör på http://${HOST}:${PORT}`);
-    if (OLLAMA_WARMUP) {
-      startOllamaWarmupLoop();
-    }
   });
 }
 
@@ -2407,8 +2686,10 @@ module.exports = {
   createDefaultState,
   warmOllamaModel,
   startOllamaWarmupLoop,
+  stopOllamaWarmupLoop,
   abortOllamaWarmup,
   getAiModelStatus,
+  getAiConfig,
   DEPARTMENTS,
   DEFAULT_DEPARTMENT_RECORDS,
   MAX_ATTACHMENTS,

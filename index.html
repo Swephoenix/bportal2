@@ -1580,6 +1580,10 @@
                 <h2 class="mobile-title text-3xl font-bold text-blue-800">Användare</h2>
                 <p class="text-gray-500">Staff synkas från AmbCentral. Koppla dem till avdelningar för mejlnotiser.</p>
             </div>
+            <button onclick="syncStaffFromAmbCentral()" class="inline-flex items-center gap-2 bg-indigo-600 text-white font-semibold px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition shadow-md text-sm">
+                <i class="fas fa-sync"></i>
+                Synkronisera personal
+            </button>
         </div>
         <div class="grid gap-6">
             <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow">
@@ -1597,6 +1601,55 @@
                 </table>
             </div>
             <div id="admin-users-mobile" class="hidden"></div>
+        </div>
+    </section>
+
+    <!-- SIDA: AI-HANTERING (Admin) -->
+    <section id="ai-management" class="hidden mobile-section max-w-3xl mx-auto px-4 py-12">
+        <button onclick="showDashboard()" class="mb-6 text-blue-600 hover:underline flex items-center">
+            <i class="fas fa-arrow-left mr-2"></i> Tillbaka
+        </button>
+        <div class="mb-8">
+            <h2 class="mobile-title text-3xl font-bold text-blue-800">AI-hantering</h2>
+            <p class="text-gray-500">Välj Ollama-modell och konfigurera AI-inställningar.</p>
+        </div>
+        <div class="grid gap-6">
+            <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div class="space-y-6">
+                    <div>
+                        <label class="mb-1 block text-sm font-semibold text-gray-700">Ollama-modell</label>
+                        <select id="ai-model-select" class="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                            <option value="">Laddar modeller...</option>
+                        </select>
+                        <p class="mt-2 text-xs text-gray-500">Välj vilken Ollama-modell som ska användas för AI-förslag.</p>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-semibold text-gray-700">Context-storlek (num_ctx)</label>
+                        <input id="ai-num-ctx" type="number" min="512" max="128000" step="512" class="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500">
+                        <p class="mt-2 text-xs text-gray-500">Antal token i modellens kontextfönster. Högre = mer minne men långsammare.</p>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-semibold text-gray-700">Modell uppvärmd</label>
+                        <div class="flex items-center gap-3">
+                            <button id="ai-warmup-toggle" type="button" role="switch" onclick="toggleAiWarmup()" class="relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 bg-gray-200" aria-checked="false">
+                                <span id="ai-warmup-thumb" class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0"></span>
+                            </button>
+                            <span id="ai-warmup-label" class="text-sm text-gray-500">Avstängd</span>
+                        </div>
+                        <p class="mt-2 text-xs text-gray-500">Håller modellen laddad i minnet för snabbare svar. Kräver mer RAM.</p>
+                    </div>
+                    <div class="flex items-center gap-3 pt-2">
+                        <button onclick="saveAiConfig()" class="bg-blue-600 text-white font-semibold px-8 py-3 rounded-xl hover:bg-blue-700 transition shadow-lg">
+                            Spara inställningar
+                        </button>
+                        <span id="ai-config-status" class="text-sm font-medium text-gray-500"></span>
+                    </div>
+                </div>
+            </div>
+            <div id="ai-model-list" class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                <h3 class="text-lg font-bold text-gray-800 mb-3">Tillgängliga modeller</h3>
+                <div id="ai-model-list-content" class="text-sm text-gray-500">Laddar...</div>
+            </div>
         </div>
     </section>
 
@@ -1766,12 +1819,80 @@
                                     Skicka meddelande
                                 </button>
                             </div>
-                        </div>
-                    </section>
+        </div>
+    </section>
+
                 </div>
             </div>
         </div>
     </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SIDA: SMTP-HANTERING (Admin) -->
+    <section id="smtp-management" class="hidden mobile-section max-w-3xl mx-auto px-4 py-12">
+        <button onclick="showDashboard()" class="mb-6 text-blue-600 hover:underline flex items-center">
+            <i class="fas fa-arrow-left mr-2"></i> Tillbaka
+        </button>
+        <div class="mb-8">
+            <h2 class="mobile-title text-3xl font-bold text-blue-800">SMTP-hantering</h2>
+            <p class="text-gray-500">Konfigurera e-postutskick och testa att SMTP fungerar.</p>
+        </div>
+        <div class="grid gap-6">
+            <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div class="space-y-5">
+                    <div>
+                        <label class="mb-1 block text-sm font-semibold text-gray-700">Server</label>
+                        <input id="smtp-host" type="text" class="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="smtp.example.com">
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-semibold text-gray-700">Port</label>
+                        <input id="smtp-port" type="number" min="1" max="65535" class="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="587">
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-semibold text-gray-700">Användarnamn</label>
+                        <input id="smtp-user" type="text" class="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="user@example.com">
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-semibold text-gray-700">Lösenord</label>
+                        <input id="smtp-password" type="password" class="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Fyll i för att ändra">
+                        <p class="mt-1 text-xs text-gray-500">Lämna tomt för att behålla nuvarande.</p>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-semibold text-gray-700">Avsändaradress</label>
+                        <input id="smtp-from" type="text" class="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="bportalen@example.com">
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3 pt-2">
+                        <button onclick="saveSmtpConfig()" class="bg-blue-600 text-white font-semibold px-8 py-3 rounded-xl hover:bg-blue-700 transition shadow-lg">
+                            Spara SMTP
+                        </button>
+                        <button onclick="testSmtpConnection()" class="bg-emerald-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-emerald-700 transition shadow-lg">
+                            Testa anslutning
+                        </button>
+                        <span id="smtp-config-status" class="text-sm font-medium text-gray-500"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Skicka testmejl</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="mb-1 block text-sm font-semibold text-gray-700">Mottagare</label>
+                        <input id="smtp-test-to" type="email" class="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="anna@example.com">
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button onclick="sendTestEmail()" class="bg-violet-600 text-white font-semibold px-8 py-3 rounded-xl hover:bg-violet-700 transition shadow-lg">
+                            Skicka testmejl
+                        </button>
+                        <span id="smtp-test-status" class="text-sm font-medium text-gray-500"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
 
     <!-- MODAL: SVARA PÅ REMISS -->
     <div id="review-modal" class="hidden fixed inset-0 z-50 bg-slate-950/75 p-4 backdrop-blur-sm" onclick="handleReviewModalBackdrop(event)">
@@ -4020,7 +4141,7 @@
         function hideAll() {
             stopAdminOrdersLiveFeed();
             stopAdminOverviewOrdersSimulation();
-            ['dashboard', 'guide-page', 'select-department', 'order-form-page', 'confirmation-page', 'manage-orders', 'sent-orders', 'admin-users']
+            ['dashboard', 'guide-page', 'select-department', 'order-form-page', 'confirmation-page', 'manage-orders', 'sent-orders', 'admin-users', 'ai-management', 'smtp-management']
             .forEach(id => document.getElementById(id).classList.add('hidden'));
             closeAIChatPopup();
         }
@@ -4048,6 +4169,8 @@
 
             if (currentUser.role === 'admin') {
                 menu.appendChild(createMenuBtn("Hantera användare", "fa-users-gear", "bg-blue-600", () => loadAdminUsers()));
+                menu.appendChild(createMenuBtn("AI-hantering", "fa-robot", "bg-violet-600", () => loadAiManagement()));
+                menu.appendChild(createMenuBtn("SMTP-inställningar", "fa-envelope", "bg-teal-600", () => loadSmtpManagement()));
                 menu.appendChild(createMenuBtn("Lägg beställning", "fa-plus-circle", "bg-emerald-600", () => showDepartments('order')));
                 menu.appendChild(createMenuBtn("Redigera avdelningar", "fa-sitemap", "bg-slate-600", () => showDepartments('manage')));
                 menu.appendChild(createMenuBtn("Visa alla beställningar", "fa-list-check", "bg-purple-600", () => loadGraphicsOrders()));
@@ -4140,6 +4263,30 @@
             const result = await apiRequest('/api/users');
             adminUsers = result.users;
             return adminUsers;
+        }
+
+        async function syncStaffFromAmbCentral() {
+            if (!currentUser || currentUser.role !== 'admin') return;
+
+            const btn = document.querySelector('button[onclick="syncStaffFromAmbCentral()"]');
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Synkroniserar...';
+            btn.disabled = true;
+
+            try {
+                const result = await apiRequest('/api/admin/sync-staff', {
+                    method: 'POST',
+                    headers: currentAuthHeaders(),
+                });
+                adminUsers = result.users || [];
+                renderAdminUsers();
+                btn.innerHTML = '<i class="fas fa-check"></i> Synkroniserad';
+                setTimeout(() => { btn.innerHTML = originalHtml; btn.disabled = false; }, 2000);
+            } catch (error) {
+                btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Misslyckades';
+                btn.disabled = false;
+                setTimeout(() => { btn.innerHTML = originalHtml; }, 3000);
+            }
         }
 
         function populateAdminGroupSelect(selectedGroups = []) {
@@ -5100,6 +5247,216 @@
                 setAIStatusBadge(result.status === 'warm' ? 'warm' : result.status === 'cold' ? 'cold' : 'offline');
             } catch (error) {
                 setAIStatusBadge('offline');
+            }
+        }
+
+        async function loadAiManagement() {
+            showPage('ai-management');
+            document.getElementById('ai-model-select').innerHTML = '<option value="">Laddar modeller...</option>';
+            document.getElementById('ai-config-status').textContent = '';
+            document.getElementById('ai-model-list-content').textContent = 'Laddar...';
+
+            try {
+                const [modelsResult, configResult] = await Promise.all([
+                    apiRequest('/api/ai/models'),
+                    apiRequest('/api/ai/config'),
+                ]);
+
+                const models = Array.isArray(modelsResult.models) ? modelsResult.models : [];
+                const config = configResult.config || {};
+
+                const select = document.getElementById('ai-model-select');
+                select.innerHTML = '<option value="">Välj modell...</option>';
+                models.forEach((model) => {
+                    const opt = document.createElement('option');
+                    opt.value = model;
+                    opt.textContent = model;
+                    if (model === config.model) opt.selected = true;
+                    select.appendChild(opt);
+                });
+
+                document.getElementById('ai-num-ctx').value = config.numCtx || '';
+
+                setAiWarmupUI(config.warmup);
+
+                const listContent = document.getElementById('ai-model-list-content');
+                if (models.length === 0) {
+                    listContent.innerHTML = '<span class="text-amber-600">Inga modeller hittades. Kontrollera att Ollama körs.</span>';
+                } else {
+                    listContent.innerHTML = models.map((m) =>
+                        `<span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">${escapeHtml(m)}</span>`
+                    ).join(' ');
+                }
+            } catch (error) {
+                document.getElementById('ai-model-select').innerHTML = '<option value="">Kunde inte ladda modeller</option>';
+                document.getElementById('ai-model-list-content').textContent = 'Misslyckades att hämta modellista.';
+                document.getElementById('ai-config-status').textContent = 'Fel vid laddning';
+                document.getElementById('ai-config-status').className = 'text-sm font-medium text-red-500';
+            }
+        }
+
+        function setAiWarmupUI(enabled) {
+            const toggle = document.getElementById('ai-warmup-toggle');
+            const thumb = document.getElementById('ai-warmup-thumb');
+            const label = document.getElementById('ai-warmup-label');
+            if (enabled) {
+                toggle.className = 'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 bg-blue-600';
+                toggle.setAttribute('aria-checked', 'true');
+                thumb.className = 'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-5';
+                label.textContent = 'Påslagen';
+                label.className = 'text-sm text-emerald-600 font-semibold';
+            } else {
+                toggle.className = 'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 bg-gray-200';
+                toggle.setAttribute('aria-checked', 'false');
+                thumb.className = 'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0';
+                label.textContent = 'Avstängd';
+                label.className = 'text-sm text-gray-500';
+            }
+        }
+
+        function toggleAiWarmup() {
+            const toggle = document.getElementById('ai-warmup-toggle');
+            const isEnabled = toggle.getAttribute('aria-checked') === 'true';
+            setAiWarmupUI(!isEnabled);
+        }
+
+        async function saveAiConfig() {
+            const select = document.getElementById('ai-model-select');
+            const model = select.value;
+            const numCtx = parseInt(document.getElementById('ai-num-ctx').value, 10);
+            const warmup = document.getElementById('ai-warmup-toggle').getAttribute('aria-checked') === 'true';
+
+            if (!model) {
+                document.getElementById('ai-config-status').textContent = 'Välj en modell.';
+                document.getElementById('ai-config-status').className = 'text-sm font-medium text-amber-600';
+                return;
+            }
+
+            const payload = { model };
+            if (!isNaN(numCtx) && numCtx > 0) payload.numCtx = numCtx;
+            payload.warmup = warmup;
+
+            document.getElementById('ai-config-status').textContent = 'Sparar...';
+            document.getElementById('ai-config-status').className = 'text-sm font-medium text-gray-500';
+
+            try {
+                const result = await apiRequest('/api/ai/config', {
+                    method: 'PUT',
+                    body: JSON.stringify(payload),
+                });
+
+                document.getElementById('ai-config-status').textContent = 'Inställningar sparade!';
+                document.getElementById('ai-config-status').className = 'text-sm font-medium text-emerald-600';
+                refreshAIStatusBadge();
+            } catch (error) {
+                document.getElementById('ai-config-status').textContent = 'Misslyckades att spara.';
+                document.getElementById('ai-config-status').className = 'text-sm font-medium text-red-500';
+            }
+        }
+
+        async function loadSmtpManagement() {
+            showPage('smtp-management');
+            document.getElementById('smtp-config-status').textContent = '';
+            document.getElementById('smtp-test-status').textContent = '';
+
+            try {
+                const result = await apiRequest('/api/admin/smtp/config');
+                const config = result.config || {};
+                document.getElementById('smtp-host').value = config.host || '';
+                document.getElementById('smtp-port').value = config.port || 587;
+                document.getElementById('smtp-user').value = config.user || '';
+                document.getElementById('smtp-password').value = '';
+                document.getElementById('smtp-from').value = config.from || '';
+            } catch (error) {
+                document.getElementById('smtp-config-status').textContent = 'Kunde inte ladda konfiguration.';
+                document.getElementById('smtp-config-status').className = 'text-sm font-medium text-red-500';
+            }
+        }
+
+        async function saveSmtpConfig() {
+            const payload = {
+                host: document.getElementById('smtp-host').value.trim(),
+                port: parseInt(document.getElementById('smtp-port').value, 10) || 587,
+                user: document.getElementById('smtp-user').value.trim(),
+                password: document.getElementById('smtp-password').value,
+                from: document.getElementById('smtp-from').value.trim(),
+            };
+
+            if (!payload.host || !payload.user || !payload.from) {
+                document.getElementById('smtp-config-status').textContent = 'Fyll i server, användarnamn och avsändaradress.';
+                document.getElementById('smtp-config-status').className = 'text-sm font-medium text-amber-600';
+                return;
+            }
+
+            document.getElementById('smtp-config-status').textContent = 'Sparar...';
+            document.getElementById('smtp-config-status').className = 'text-sm font-medium text-gray-500';
+
+            try {
+                const result = await apiRequest('/api/admin/smtp/config', {
+                    method: 'PUT',
+                    body: JSON.stringify(payload),
+                });
+                document.getElementById('smtp-config-status').textContent = 'SMTP-konfiguration sparad!';
+                document.getElementById('smtp-config-status').className = 'text-sm font-medium text-emerald-600';
+            } catch (error) {
+                document.getElementById('smtp-config-status').textContent = 'Misslyckades att spara.';
+                document.getElementById('smtp-config-status').className = 'text-sm font-medium text-red-500';
+            }
+        }
+
+        async function testSmtpConnection() {
+            const payload = {
+                host: document.getElementById('smtp-host').value.trim(),
+                port: parseInt(document.getElementById('smtp-port').value, 10) || 587,
+                user: document.getElementById('smtp-user').value.trim(),
+                password: document.getElementById('smtp-password').value,
+            };
+
+            if (!payload.host || !payload.user) {
+                document.getElementById('smtp-config-status').textContent = 'Fyll i server och användarnamn först.';
+                document.getElementById('smtp-config-status').className = 'text-sm font-medium text-amber-600';
+                return;
+            }
+
+            document.getElementById('smtp-config-status').textContent = 'Testar anslutning...';
+            document.getElementById('smtp-config-status').className = 'text-sm font-medium text-gray-500';
+
+            try {
+                const result = await apiRequest('/api/admin/smtp/test', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+                document.getElementById('smtp-config-status').textContent = result.message || 'Anslutning lyckades!';
+                document.getElementById('smtp-config-status').className = 'text-sm font-medium text-emerald-600';
+            } catch (error) {
+                const msg = error.response && error.response.message || error.message || 'Anslutning misslyckades.';
+                document.getElementById('smtp-config-status').textContent = msg;
+                document.getElementById('smtp-config-status').className = 'text-sm font-medium text-red-500';
+            }
+        }
+
+        async function sendTestEmail() {
+            const to = document.getElementById('smtp-test-to').value.trim();
+            if (!to) {
+                document.getElementById('smtp-test-status').textContent = 'Ange en mottagare.';
+                document.getElementById('smtp-test-status').className = 'text-sm font-medium text-amber-600';
+                return;
+            }
+
+            document.getElementById('smtp-test-status').textContent = 'Skickar...';
+            document.getElementById('smtp-test-status').className = 'text-sm font-medium text-gray-500';
+
+            try {
+                const result = await apiRequest('/api/admin/smtp/test-send', {
+                    method: 'POST',
+                    body: JSON.stringify({ to }),
+                });
+                document.getElementById('smtp-test-status').textContent = result.message || 'Mejl skickat!';
+                document.getElementById('smtp-test-status').className = 'text-sm font-medium text-emerald-600';
+            } catch (error) {
+                const msg = error.response && error.response.message || error.message || 'Misslyckades att skicka.';
+                document.getElementById('smtp-test-status').textContent = msg;
+                document.getElementById('smtp-test-status').className = 'text-sm font-medium text-red-500';
             }
         }
 
