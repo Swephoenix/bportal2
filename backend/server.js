@@ -1,7 +1,31 @@
 const http = require('node:http');
 const fs = require('node:fs');
+const net = require('node:net');
+const tls = require('node:tls');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const Database = require('better-sqlite3');
+const bcrypt = require('bcryptjs');
+
+const db = new Database(path.join(__dirname, 'data', 'bportal.db'));
+
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  fs.readFileSync(envPath, 'utf8').split('\n').forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) return;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (key && !process.env[key]) {
+      process.env[key] = value;
+    }
+  });
+}
 
 const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -28,8 +52,9 @@ const DEPARTMENTS = [
   'Filmgruppen',
   'Juridikgruppen',
   'Sekretessavtal',
-  'Beställa brochyrer',
+  'Beställa broschyrer',
   'Grafikgruppen',
+  'Boka zoom-möte',
   'Medlemsutskick',
   'Medlemsregister',
   'IT-support / Mjukvara',
@@ -38,25 +63,26 @@ const DEPARTMENTS = [
   'HR / Personalfrågor',
 ];
 
-const DEPARTMENT_EMAILS = {
-  'Frågor om partiet': 'fragor-om-partiet@example.com',
-  Valorganisation: 'valorganisation@example.com',
-  'Utskick i Sociala medier': 'sociala-medier@example.com',
-  Skribentgruppen: 'skribentgruppen@example.com',
-  Filmgruppen: 'filmgruppen@example.com',
-  Juridikgruppen: 'juridikgruppen@example.com',
-  Sekretessavtal: 'sekretessavtal@example.com',
-  'Beställa brochyrer': 'brochyrer@example.com',
-  Grafikgruppen: 'grafikgruppen@example.com',
-  Medlemsutskick: 'medlemsutskick@example.com',
-  Medlemsregister: 'medlemsregister@example.com',
-  'IT-support / Mjukvara': 'it-support@example.com',
-  Hemsidan: 'hemsidan@example.com',
-  Marknad: 'marknad@example.com',
-  'HR / Personalfrågor': 'hr@example.com',
+const DEPARTMENT_DESCRIPTIONS = {
+  'Frågor om partiet': 'Allmänna frågor om partiet, politik, organisation och kontaktvägar.',
+  Valorganisation: 'Valarbete, kampanjer, flygblad, aktiviteter, valstugor och valrelaterade beställningar.',
+  'Utskick i Sociala medier': 'Inlägg, publicering, kampanjer och utskick i sociala medier.',
+  Skribentgruppen: 'Texter, korrektur, artiklar, formuleringar, talepunkter och skriftligt innehåll.',
+  Filmgruppen: 'Film, video, klippning, inspelning, rörligt material och videoproduktion.',
+  Juridikgruppen: 'Juridiska frågor, avtal, regler, rättsliga bedömningar och juridisk rådgivning.',
+  Sekretessavtal: 'Sekretessavtal, NDA, hantering av konfidentiell information och relaterade avtal.',
+  'Beställa broschyrer': 'Beställningar av broschyrer, trycksaker, foldrar och informationsmaterial.',
+  Grafikgruppen: 'Grafik, bilder, design, affischer, banners, layout, logotyper och visuellt material.',
+  'Boka zoom-möte': 'Bokning och planering av digitala möten i Zoom.',
+  Medlemsutskick: 'Utskick till medlemmar, nyhetsbrev, medlemskommunikation och massutskick.',
+  Medlemsregister: 'Medlemsuppgifter, register, adressändringar, medlemsdata och registerfrågor.',
+  'IT-support / Mjukvara': 'Datorproblem, inloggning, lösenord, e-post, skrivare, Teams, Office och mjukvara.',
+  Hemsidan: 'Webbplatsen, webbsidor, innehåll på hemsidan, publicering och webbändringar.',
+  Marknad: 'Marknadsföring, kampanjmaterial, annonsering, varumärke och extern kommunikation.',
+  'HR / Personalfrågor': 'Personalfrågor, HR, arbetsmiljö, anställning, ledighet och interna personalärenden.',
 };
 
-const PROTECTED_DEPARTMENT_NAME = 'Grafikgruppen';
+const PROTECTED_DEPARTMENT_NAMES = new Set(['Grafikgruppen', 'Boka zoom-möte']);
 
 const DEPARTMENT_ALIASES = {
   'grafiska produktionsgruppen': 'Grafikgruppen',
@@ -66,23 +92,44 @@ const DEPARTMENT_ALIASES = {
 
 const DEFAULT_DEPARTMENT_RECORDS = DEPARTMENTS.map((name) => ({
   name,
-  email: DEPARTMENT_EMAILS[name],
+  description: DEPARTMENT_DESCRIPTIONS[name],
 }));
 
 const PROTECTED_DEPARTMENT_RECORD = {
-  name: PROTECTED_DEPARTMENT_NAME,
-  email: DEPARTMENT_EMAILS[PROTECTED_DEPARTMENT_NAME],
+  name: 'Grafikgruppen',
+  description: DEPARTMENT_DESCRIPTIONS.Grafikgruppen,
 };
 
-const USERS = [
-  { username: 'user', password: 'user', user: { name: 'Personal', role: 'orderer' } },
-  { username: 'user2', password: 'user2', user: { name: 'Grafikgruppen', role: 'graphics' } },
+const SECOND_PROTECTED_DEPARTMENT_RECORD = {
+  name: 'Boka zoom-möte',
+  description: DEPARTMENT_DESCRIPTIONS['Boka zoom-möte'],
+};
+
+const DEFAULT_USERS = [
+  { username: 'user', password: 'user', user: { name: 'Anders Jansson', role: 'member', email: 'personal@example.com' } },
+  { username: 'lena', password: 'demo', user: { name: 'Lena Karlsson', role: 'member', email: 'lena.karlsson@example.com', group: 'Frågor om partiet', groups: ['Frågor om partiet'] } },
+  { username: 'mats', password: 'demo', user: { name: 'Mats Nilsson', role: 'member', email: 'mats.nilsson@example.com', group: 'Valorganisation', groups: ['Valorganisation'] } },
+  { username: 'sara', password: 'demo', user: { name: 'Sara Lindberg', role: 'member', email: 'sara.lindberg@example.com', group: 'Utskick i Sociala medier', groups: ['Utskick i Sociala medier'] } },
+  { username: 'erik', password: 'demo', user: { name: 'Erik Svensson', role: 'member', email: 'erik.svensson@example.com', group: 'Skribentgruppen', groups: ['Skribentgruppen'] } },
+  { username: 'maria', password: 'demo', user: { name: 'Maria Ek', role: 'member', email: 'maria.ek@example.com', group: 'Filmgruppen', groups: ['Filmgruppen'] } },
+  { username: 'oskar', password: 'demo', user: { name: 'Oskar Lund', role: 'member', email: 'oskar.lund@example.com', group: 'Juridikgruppen', groups: ['Juridikgruppen'] } },
+  { username: 'elin', password: 'demo', user: { name: 'Elin Holm', role: 'member', email: 'elin.holm@example.com', group: 'Sekretessavtal', groups: ['Sekretessavtal'] } },
+  { username: 'per', password: 'demo', user: { name: 'Per Gustafsson', role: 'member', email: 'per.gustafsson@example.com', group: 'Beställa broschyrer', groups: ['Beställa broschyrer'] } },
+  { username: 'user2', password: 'user2', user: { name: 'Anna Olsson', role: 'member', email: 'grafikgruppen@example.com', group: 'Grafikgruppen', groups: ['Grafikgruppen'] } },
+  { username: 'zoom', password: 'demo', user: { name: 'Zoomansvarig', role: 'member', email: 'zoom@example.com', group: 'Boka zoom-möte', groups: ['Boka zoom-möte'] } },
+  { username: 'sofia', password: 'demo', user: { name: 'Sofia Bergström', role: 'member', email: 'sofia.bergstrom@example.com', group: 'Medlemsutskick', groups: ['Medlemsutskick'] } },
+  { username: 'johan', password: 'demo', user: { name: 'Johan Eriksson', role: 'member', email: 'johan.eriksson@example.com', group: 'Medlemsregister', groups: ['Medlemsregister'] } },
+  { username: 'emma', password: 'demo', user: { name: 'Emma Persson', role: 'member', email: 'emma.persson@example.com', group: 'IT-support / Mjukvara', groups: ['IT-support / Mjukvara'] } },
+  { username: 'niklas', password: 'demo', user: { name: 'Niklas Åberg', role: 'member', email: 'niklas.aberg@example.com', group: 'Hemsidan', groups: ['Hemsidan'] } },
+  { username: 'camilla', password: 'demo', user: { name: 'Camilla Larsson', role: 'member', email: 'camilla.larsson@example.com', group: 'Marknad', groups: ['Marknad'] } },
+  { username: 'fredrik', password: 'demo', user: { name: 'Fredrik Sandberg', role: 'member', email: 'fredrik.sandberg@example.com', group: 'HR / Personalfrågor', groups: ['HR / Personalfrågor'] } },
+  { username: 'admin', password: 'ambitionadmin', user: { name: 'Andreas', role: 'admin', email: 'admin@example.com' } },
 ];
 
 const DEMO_ORDERS = [
-  { from: 'Erik (Kommunikation)', msg: 'Design av ny flyer för sommarkampanjen.', deadline: '2024-06-15', dept: 'Grafikgruppen', deptEmail: DEPARTMENT_EMAILS.Grafikgruppen, status: 'Väntar' },
-  { from: 'Anna (HR)', msg: 'Uppdatera profilbilder för ledningsgruppen.', deadline: '2024-06-20', dept: 'Grafikgruppen', deptEmail: DEPARTMENT_EMAILS.Grafikgruppen, status: 'Pågående' },
-  { from: 'Marknadsavdelningen', msg: 'Ta fram 3 st olika banners för Facebook-annonsering.', deadline: '', dept: 'Grafikgruppen', deptEmail: DEPARTMENT_EMAILS.Grafikgruppen, status: 'Ny' },
+  { from: 'Erik (Kommunikation)', msg: 'Design av ny flyer för sommarkampanjen.', deadline: '2024-06-15', dept: 'Grafikgruppen', status: 'Väntar' },
+  { from: 'Anna (HR)', msg: 'Uppdatera profilbilder för ledningsgruppen.', deadline: '2024-06-20', dept: 'Grafikgruppen', status: 'Pågående' },
+  { from: 'Marknadsavdelningen', msg: 'Ta fram 3 st olika banners för Facebook-annonsering.', deadline: '', dept: 'Grafikgruppen', status: 'Ny' },
 ];
 
 function formatDate(date = new Date()) {
@@ -99,6 +146,12 @@ function isDateString(value) {
 function createDefaultState() {
   return {
     departments: DEFAULT_DEPARTMENT_RECORDS.map((department) => ({ ...department })),
+    users: DEFAULT_USERS.map((entry) => ({
+      username: entry.username,
+      password: entry.password,
+      user: { ...entry.user },
+    })),
+    userSettings: {},
     orders: DEMO_ORDERS.map((order) => ({
       id: crypto.randomUUID(),
       createdAt: formatDate(),
@@ -114,6 +167,8 @@ function loadState(dataFile = DATA_FILE) {
     if (Array.isArray(parsed.orders)) {
       return {
         departments: normalizeDepartmentRecords(parsed.departments),
+        users: normalizeUsers(parsed.users),
+        userSettings: normalizeUserSettingsMap(parsed.userSettings),
         orders: parsed.orders,
       };
     }
@@ -126,6 +181,217 @@ function loadState(dataFile = DATA_FILE) {
   return createDefaultState();
 }
 
+function normalizeRole(role) {
+  const r = String(role || '').trim().toLowerCase();
+  if (r === 'admin') return 'admin';
+  return 'member';
+}
+
+function normalizeUserGroups(user = {}) {
+  const values = [
+    ...(Array.isArray(user.groups) ? user.groups : []),
+    user.group,
+  ];
+  const groups = [];
+  const seen = new Set();
+
+  values.forEach((value) => {
+    const group = String(value || '').trim();
+    const key = group.toLowerCase();
+    if (!group || seen.has(key)) return;
+    groups.push(group);
+    seen.add(key);
+  });
+
+  return groups;
+}
+
+function normalizeUserEntry(entry) {
+  const username = String(entry && entry.username || '').trim();
+  const password = String(entry && entry.password || '').trim();
+  const rawUser = entry && entry.user && typeof entry.user === 'object' ? entry.user : entry;
+  let name = String(rawUser && rawUser.name || username || '').trim();
+  const email = userSettingsKey(rawUser && rawUser.email);
+  const role = normalizeRole(rawUser && rawUser.role);
+  const groups = normalizeUserGroups(rawUser);
+
+  if (username === 'user' && name === 'Personal') name = 'Anders Jansson';
+  if (username === 'user2' && name === 'Grafikgruppen') name = 'Anna Olsson';
+  if (username === 'admin' && name === 'Admin') name = 'Karin Berg';
+
+  if (!username || !password || !name || !email) return null;
+
+  return {
+    username,
+    password,
+    user: {
+      name,
+      role,
+      email,
+      ...(groups.length ? { group: groups[0], groups } : {}),
+    },
+  };
+}
+
+function normalizeUsers(users) {
+  const source = Array.isArray(users) ? users : DEFAULT_USERS;
+  const normalized = [];
+  const seenUsernames = new Set();
+  const seenEmails = new Set();
+
+  source.forEach((entry) => {
+    const normalizedEntry = normalizeUserEntry(entry);
+    if (!normalizedEntry) return;
+
+    const usernameKey = normalizedEntry.username.toLowerCase();
+    const emailKey = userSettingsKey(normalizedEntry.user.email);
+    if (seenUsernames.has(usernameKey) || seenEmails.has(emailKey)) return;
+
+    normalized.push(normalizedEntry);
+    seenUsernames.add(usernameKey);
+    seenEmails.add(emailKey);
+  });
+
+  return normalized.length ? normalized : DEFAULT_USERS.map((entry) => ({
+    username: entry.username,
+    password: entry.password,
+    user: { ...entry.user },
+  }));
+}
+
+function publicUserEntry(entry) {
+  return {
+    username: entry.username,
+    name: entry.user.name,
+    role: entry.user.role,
+    email: entry.user.email,
+    group: entry.user.group || '',
+    groups: normalizeUserGroups(entry.user),
+  };
+}
+
+function payloadGroups(payload) {
+  return [
+    ...(Array.isArray(payload && payload.groups) ? payload.groups : []),
+    payload && payload.group,
+  ].map((group) => String(group || '').trim()).filter(Boolean);
+}
+
+function validateUserPayload(payload, state, existingUsername = '', { requirePassword = true } = {}) {
+  const details = [];
+  const username = String(payload && payload.username || '').trim();
+  const password = String(payload && payload.password || '').trim();
+  const name = String(payload && payload.name || '').trim();
+  const email = userSettingsKey(payload && payload.email);
+  const role = String(payload && payload.role || '').trim();
+  const groups = payloadGroups(payload);
+  const users = normalizeUsers(state.users);
+  const existingKey = String(existingUsername || '').toLowerCase();
+
+  if (!username) details.push('username_required');
+  if (requirePassword && !password) details.push('password_required');
+  if (!name) details.push('name_required');
+  if (!email) details.push('email_required');
+  if (!['member', 'admin'].includes(role)) details.push('role_invalid');
+  if (groups.some((group) => !normalizeDepartmentName(group, state))) details.push('group_invalid');
+  if (users.some((entry) => entry.username.toLowerCase() === username.toLowerCase() && entry.username.toLowerCase() !== existingKey)) {
+    details.push('username_taken');
+  }
+  if (users.some((entry) => userSettingsKey(entry.user.email) === email && entry.username.toLowerCase() !== existingKey)) {
+    details.push('email_taken');
+  }
+
+  return details;
+}
+
+function safeUserEntry(payload, state, existingEntry = null) {
+  const groups = payloadGroups(payload)
+    .map((group) => normalizeDepartmentName(group, state))
+    .filter(Boolean)
+    .filter((group, index, values) => values.indexOf(group) === index);
+  return {
+    username: String(payload.username).trim(),
+    password: String(payload.password || existingEntry?.password || '').trim(),
+    user: {
+      name: String(payload.name).trim(),
+      role: normalizeRole(payload.role),
+      email: userSettingsKey(payload.email),
+      ...(groups.length ? { group: groups[0], groups } : {}),
+    },
+  };
+}
+
+function upsertUserInDb(username, password, user = {}) {
+  const hash = bcrypt.hashSync(password, 10);
+  db.prepare(
+    'INSERT OR REPLACE INTO users (username, password_hash, name, role, email) VALUES (?, ?, ?, ?, ?)'
+  ).run(username, hash, user.name || '', user.role || 'member', user.email || '');
+  return hash;
+}
+
+function deleteUserFromDb(username) {
+  db.prepare('DELETE FROM users WHERE username = ?').run(username);
+}
+
+function defaultUserSettings(user = {}) {
+  const isGroupUser = normalizeUserGroups(user).length > 0;
+  return {
+    notifyOrderResponses: true,
+    notifyGroupOrders: isGroupUser,
+    notifyGroupReviews: isGroupUser,
+  };
+}
+
+function userSettingsKey(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function normalizeUserSettings(settings = {}, user = {}) {
+  const defaults = defaultUserSettings(user);
+  return {
+    notifyOrderResponses: typeof settings.notifyOrderResponses === 'boolean'
+      ? settings.notifyOrderResponses
+      : defaults.notifyOrderResponses,
+    notifyGroupOrders: typeof settings.notifyGroupOrders === 'boolean'
+      ? settings.notifyGroupOrders
+      : defaults.notifyGroupOrders,
+    notifyGroupReviews: typeof settings.notifyGroupReviews === 'boolean'
+      ? settings.notifyGroupReviews
+      : defaults.notifyGroupReviews,
+  };
+}
+
+function normalizeUserSettingsMap(settingsMap) {
+  if (!settingsMap || typeof settingsMap !== 'object' || Array.isArray(settingsMap)) return {};
+  return Object.fromEntries(Object.entries(settingsMap)
+    .map(([email, settings]) => [userSettingsKey(email), normalizeUserSettings(settings)])
+    .filter(([email]) => email));
+}
+
+function getUserSettings(state, user) {
+  const key = userSettingsKey(user && user.email);
+  return normalizeUserSettings(key ? state.userSettings[key] : {}, user);
+}
+
+function setUserSettings(state, user, settings) {
+  const key = userSettingsKey(user && user.email);
+  if (!key) return null;
+  state.userSettings = normalizeUserSettingsMap(state.userSettings);
+  state.userSettings[key] = normalizeUserSettings(settings, user);
+  return state.userSettings[key];
+}
+
+function findUserByEmail(state, email) {
+  const key = userSettingsKey(email);
+  return normalizeUsers(state.users).map((entry) => entry.user).find((user) => userSettingsKey(user.email) === key) || null;
+}
+
+function isAdminRequest(state, headers = {}) {
+  const email = headers['x-bportal-user-email'] || headers['X-Bportal-User-Email'];
+  const user = findUserByEmail(state, email);
+  return Boolean(user && user.role === 'admin');
+}
+
 function normalizeDepartmentRecords(records) {
   if (!Array.isArray(records)) {
     return DEFAULT_DEPARTMENT_RECORDS.map((department) => ({ ...department }));
@@ -136,12 +402,12 @@ function normalizeDepartmentRecords(records) {
 
   records.forEach((record) => {
     const name = String(record && record.name || '').trim();
-    const email = String(record && record.email || '').trim();
+    const description = String(record && record.description || '').trim();
     const key = name.toLowerCase();
     if (!name || seen.has(key)) return;
     normalized.push({
       name,
-      email: email || 'placeholder@example.com',
+      description: description || DEPARTMENT_DESCRIPTIONS[name] || '',
     });
     seen.add(key);
   });
@@ -150,8 +416,17 @@ function normalizeDepartmentRecords(records) {
     return DEFAULT_DEPARTMENT_RECORDS.map((department) => ({ ...department }));
   }
 
-  if (!seen.has(PROTECTED_DEPARTMENT_NAME.toLowerCase())) {
-    normalized.push({ ...PROTECTED_DEPARTMENT_RECORD });
+  for (const protectedDepartmentName of PROTECTED_DEPARTMENT_NAMES) {
+    if (seen.has(protectedDepartmentName.toLowerCase())) continue;
+    const protectedRecord = protectedDepartmentName === 'Grafikgruppen'
+      ? PROTECTED_DEPARTMENT_RECORD
+      : SECOND_PROTECTED_DEPARTMENT_RECORD;
+    normalized.push({ ...protectedRecord });
+    seen.add(protectedDepartmentName.toLowerCase());
+  }
+
+  if (normalized.length === 0) {
+    return DEFAULT_DEPARTMENT_RECORDS.map((department) => ({ ...department }));
   }
 
   return normalized;
@@ -165,10 +440,13 @@ function getDepartmentNames(state) {
   return getDepartmentRecords(state).map((department) => department.name);
 }
 
-function getDepartmentEmails(state) {
-  return Object.fromEntries(
-    getDepartmentRecords(state).map((department) => [department.name, department.email]),
-  );
+function getDepartmentPromptRows(state) {
+  return getDepartmentRecords(state).map((department) => {
+    const description = String(department.description || '').trim();
+    return description
+      ? `- ${department.name}: ${description}`
+      : `- ${department.name}: Ingen beskrivning angiven. Använd bara namnet om användarens ärende tydligt matchar avdelningen.`;
+  });
 }
 
 function saveState(state, dataFile = DATA_FILE) {
@@ -228,18 +506,28 @@ function parseBody(body) {
 
 function validateOrder(payload, state) {
   const details = [];
+  const department = normalizeDepartmentName(payload && payload.dept, state);
 
   if (!payload || typeof payload !== 'object') {
     return ['body_invalid'];
   }
 
   if (!String(payload.msg || '').trim()) details.push('msg_required');
-  if (!normalizeDepartmentName(payload.dept, state)) details.push('dept_invalid');
+  if (!department) details.push('dept_invalid');
   if (String(payload.deadline || '').trim() && !isDateString(payload.deadline)) {
     details.push('deadline_invalid');
   }
   if (payload.attachments !== undefined && !Array.isArray(payload.attachments)) {
     details.push('attachments_invalid');
+  }
+  if (department === 'Boka zoom-möte') {
+    const meeting = payload.zoomMeetingRequest;
+    if (!meeting || typeof meeting !== 'object') {
+      details.push('zoom_meeting_required');
+    } else {
+      if (!isDateString(meeting.date)) details.push('zoom_meeting_date_invalid');
+      if (!/^\d{2}:\d{2}$/.test(String(meeting.time || ''))) details.push('zoom_meeting_time_invalid');
+    }
   }
   if (Array.isArray(payload.attachments) && payload.attachments.length > MAX_ATTACHMENTS) {
     details.push('attachments_too_many');
@@ -276,20 +564,57 @@ function safeAttachments(payload) {
   }));
 }
 
-function safeOrder(payload, state) {
+function safeGraphicsRequest(payload) {
+  if (!payload || typeof payload.graphicsRequest !== 'object' || payload.graphicsRequest === null) return null;
+  const request = payload.graphicsRequest;
+  const channels = Array.isArray(request.channels)
+    ? request.channels.map((channel) => String(channel || '').trim().slice(0, 40)).filter(Boolean)
+    : [];
+
+  return {
+    title: String(request.title || '').trim().slice(0, 160),
+    customerName: String(request.customerName || '').trim().slice(0, 120),
+    customerEmail: String(request.customerEmail || '').trim().slice(0, 180),
+    purpose: String(request.purpose || '').trim().slice(0, 2000),
+    contentWishes: String(request.contentWishes || '').trim().slice(0, 2000),
+    channels,
+    extraMessage: String(request.extraMessage || '').trim().slice(0, 2000),
+  };
+}
+
+function safeZoomMeetingRequest(payload) {
+  if (!payload || typeof payload.zoomMeetingRequest !== 'object' || payload.zoomMeetingRequest === null) return null;
+  const request = payload.zoomMeetingRequest;
+
+  return {
+    date: String(request.date || '').trim().slice(0, 20),
+    time: String(request.time || '').trim().slice(0, 8),
+    notes: String(request.notes || '').trim().slice(0, 2000),
+  };
+}
+
+function findUserEntryByEmail(state, email) {
+  const key = userSettingsKey(email);
+  return normalizeUsers(state.users).find((entry) => userSettingsKey(entry.user.email) === key) || null;
+}
+
+function safeOrder(payload, state, requestUser = null) {
   const department = normalizeDepartmentName(payload.dept, state);
-  const departmentEmails = getDepartmentEmails(state);
+  const requestUserEntry = requestUser ? findUserEntryByEmail(state, requestUser.email) : null;
 
   return {
     id: crypto.randomUUID(),
     createdAt: formatDate(),
     from: String(payload.from || 'Okänd').trim() || 'Okänd',
+    fromUsername: String(payload.fromUsername || requestUserEntry?.username || '').trim(),
+    fromEmail: String(payload.fromEmail || '').trim().slice(0, 180),
     msg: String(payload.msg).trim(),
     deadline: String(payload.deadline || '').trim(),
     dept: department,
-    deptEmail: departmentEmails[department],
     status: 'Ny',
     attachments: safeAttachments(payload),
+    graphicsRequest: safeGraphicsRequest(payload),
+    zoomMeetingRequest: safeZoomMeetingRequest(payload),
     proposals: [],
   };
 }
@@ -368,6 +693,210 @@ function normalizeDepartmentName(value, state) {
   return departments.find((department) => department.toLowerCase() === text) || null;
 }
 
+function smtpCommand(socket, command) {
+  if (command) socket.write(`${command}\r\n`);
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      socket.off('data', onData);
+      socket.off('error', onError);
+    };
+
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+
+    const onData = (chunk) => {
+      const text = chunk.toString('utf8');
+      const lines = text.trim().split(/\r?\n/);
+      const last = lines[lines.length - 1] || '';
+      if (/^\d{3} /.test(last)) {
+        cleanup();
+        const code = Number(last.slice(0, 3));
+        if (code >= 400) reject(new Error(text.trim()));
+        else resolve(text);
+      }
+    };
+    socket.on('data', onData);
+    socket.on('error', onError);
+  });
+}
+
+function escapeEmailLine(value) {
+  return String(value || '').replace(/[\r\n]+/g, ' ').trim();
+}
+
+async function sendMail({ to, subject, text, html }) {
+  const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT || 587);
+  const from = process.env.SMTP_FROM || 'bportalen@localhost';
+  const username = process.env.SMTP_USER || from;
+  const password = process.env.SMTP_PASSWORD || '';
+  const secure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465;
+
+  if (!host || !username || !password) {
+    console.log(`[mail not configured] To: ${to} | Subject: ${subject}\n${text || html}`);
+    return false;
+  }
+
+  let socket = secure
+    ? tls.connect({ host, port, servername: host })
+    : net.createConnection({ host, port });
+
+  await smtpCommand(socket);
+  await smtpCommand(socket, `EHLO ${process.env.SMTP_HELO || 'localhost'}`);
+  if (!secure) {
+    await smtpCommand(socket, 'STARTTLS');
+    socket = tls.connect({ socket, servername: host });
+    await new Promise((resolve, reject) => {
+      socket.once('secureConnect', resolve);
+      socket.once('error', reject);
+    });
+    await smtpCommand(socket, `EHLO ${process.env.SMTP_HELO || 'localhost'}`);
+  }
+  await smtpCommand(socket, 'AUTH LOGIN');
+  await smtpCommand(socket, Buffer.from(username, 'utf8').toString('base64'));
+  await smtpCommand(socket, Buffer.from(password, 'utf8').toString('base64'));
+  await smtpCommand(socket, `MAIL FROM:<${from}>`);
+  await smtpCommand(socket, `RCPT TO:<${to}>`);
+  await smtpCommand(socket, 'DATA');
+
+  const boundary = `bportal-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  if (html) {
+    socket.write([
+      `From: ${escapeEmailLine(from)}`,
+      `To: ${escapeEmailLine(to)}`,
+      `Subject: ${escapeEmailLine(subject)}`,
+      'MIME-Version: 1.0',
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      '',
+      `--${boundary}`,
+      'Content-Type: text/plain; charset=utf-8',
+      'Content-Transfer-Encoding: 7bit',
+      '',
+      text || '',
+      `--${boundary}`,
+      'Content-Type: text/html; charset=utf-8',
+      'Content-Transfer-Encoding: 7bit',
+      '',
+      html,
+      `--${boundary}--`,
+      '.',
+      '',
+    ].join('\r\n'));
+  } else {
+    socket.write([
+      `From: ${escapeEmailLine(from)}`,
+      `To: ${escapeEmailLine(to)}`,
+      `Subject: ${escapeEmailLine(subject)}`,
+      'Content-Type: text/plain; charset=utf-8',
+      '',
+      text,
+      '.',
+      '',
+    ].join('\r\n'));
+  }
+
+  await smtpCommand(socket);
+  await smtpCommand(socket, 'QUIT').catch(() => {});
+  socket.end();
+  return true;
+}
+
+function notifyByEmail(message) {
+  const host = process.env.SMTP_HOST;
+  const username = process.env.SMTP_USER || process.env.SMTP_FROM || '';
+  const password = process.env.SMTP_PASSWORD || '';
+
+  if (!host || !username || !password) {
+    return false;
+  }
+
+  sendMail(message).catch((error) => {
+    console.error('Mail notification failed:', error.message);
+  });
+  return true;
+}
+
+function groupUsersForDepartment(state, department) {
+  return normalizeUsers(state.users)
+    .map((entry) => entry.user)
+    .filter((user) => normalizeUserGroups(user).includes(department));
+}
+
+function notifyGroupOrder(state, order) {
+  groupUsersForDepartment(state, order.dept).forEach((user) => {
+    const settings = getUserSettings(state, user);
+    if (!settings.notifyGroupOrders) return;
+    notifyByEmail({
+      to: user.email,
+      subject: `Ny beställning till ${order.dept}`,
+      text: [
+        `Ny beställning från ${order.from}.`,
+        '',
+        order.msg,
+        '',
+        `Deadline: ${order.deadline || 'Ej angiven'}`,
+      ].join('\n'),
+    });
+  });
+}
+
+function getOrdererEmail(order) {
+  return String(order.fromEmail || order.graphicsRequest?.customerEmail || '').trim();
+}
+
+function canAccessOrderChat(state, order, user) {
+  if (!order || !user) return false;
+  if (user.role === 'admin') return true;
+
+  const orderEmail = userSettingsKey(getOrdererEmail(order));
+  const userEmail = userSettingsKey(user.email);
+  if (orderEmail && userEmail && orderEmail === userEmail) return true;
+
+  if (normalizeUserGroups(user).includes(order.dept)) return true;
+
+  const ordererName = String(order.from || '').trim().toLowerCase();
+  const userName = String(user.name || '').trim().toLowerCase();
+  return Boolean(ordererName && userName && ordererName === userName);
+}
+
+function notifyOrdererProposal(state, order, proposal) {
+  const email = getOrdererEmail(order);
+  const user = findUserByEmail(state, email);
+  const settings = user ? getUserSettings(state, user) : defaultUserSettings();
+  if (!email || !settings.notifyOrderResponses) return;
+  notifyByEmail({
+    to: email,
+    subject: `Svar på din beställning från ${order.dept}`,
+    text: [
+      `${proposal.from} har svarat på din beställning.`,
+      '',
+      proposal.note,
+    ].join('\n'),
+  });
+}
+
+function notifyGroupReview(state, order, review) {
+  groupUsersForDepartment(state, order.dept).forEach((user) => {
+    const settings = getUserSettings(state, user);
+    if (!settings.notifyGroupReviews) return;
+    notifyByEmail({
+      to: user.email,
+      subject: `Beställaren har svarat på remiss`,
+      text: [
+        `${order.from} har svarat på remissen för beställningen till ${order.dept}.`,
+        '',
+        `Betyg: ${review.rating}`,
+        `Status: ${review.completed ? 'Avklarad' : 'Behöver ändras'}`,
+        '',
+        review.response,
+      ].join('\n'),
+    });
+  });
+}
+
 function extractAiSuggestion(content, state) {
   if (!content) return null;
 
@@ -393,17 +922,81 @@ function extractAiSuggestion(content, state) {
   };
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function inferAiSuggestionFromText(messages, reply, state) {
+  const replyText = String(reply || '').trim();
+  const latestMessage = latestUserMessage(messages);
+  const userText = String(latestMessage || '').toLowerCase();
+  const availableDepartments = new Set(getDepartmentNames(state));
+  const rules = [
+    {
+      department: 'Grafikgruppen',
+      pattern: /\b(grafik|grafisk|bild|bilder|banner|banners|affisch|affischer|design|logo|logotyp|layout|visuell|visuellt)\b/i,
+      reason: 'Användaren beskriver grafik, bild, design eller visuellt material.',
+    },
+    {
+      department: 'IT-support / Mjukvara',
+      pattern: /\b(datorproblem|dator|inloggning|lösenord|microsoft word|excel|office|e-post|epost|skrivare|teams|zoom|mjukvara|program)\b/i,
+      reason: 'Användaren beskriver ett IT- eller mjukvaruärende.',
+    },
+    {
+      department: 'Valorganisation',
+      pattern: /\b(valarbete|valstuga|valstugor|kampanj|flygblad|valrelaterad|valrelaterat)\b/i,
+      reason: 'Användaren beskriver valarbete eller kampanjmaterial.',
+    },
+  ];
+
+  const matches = rules
+    .filter((rule) => availableDepartments.has(rule.department) && rule.pattern.test(userText));
+
+  if (matches.length === 1) {
+    const match = matches[0];
+    return {
+      department: match.department,
+      reason: match.reason,
+      confidence: 0.82,
+      reply: replyText || defaultRecommendationReply(match.department),
+      inferred: true,
+    };
+  }
+
+  const lowerReply = replyText.toLowerCase();
+  const explicitlySkippedCommand = /ingen\s+kommando|utan\s+kommando|skriver\s+ingen/i.test(lowerReply);
+  if (!explicitlySkippedCommand) {
+    const explicitlyRecommended = getDepartmentNames(state).find((department) => {
+      const departmentPattern = escapeRegExp(department).replace(/\\ /g, '\\s+');
+      const pattern = new RegExp(`(?:hör\\s+till|låter\\s+som|är\\s+(?:ett|en)|skicka\\s+till|skickas\\s+till)[\\s\\S]{0,40}\\b${departmentPattern}\\b`, 'i');
+      return pattern.test(replyText);
+    });
+
+    if (explicitlyRecommended) {
+      return {
+        department: explicitlyRecommended,
+        reason: `AI-svaret rekommenderade ${explicitlyRecommended} men saknade kommandoraden.`,
+        confidence: 0.78,
+        reply: replyText || defaultRecommendationReply(explicitlyRecommended),
+        inferred: true,
+      };
+    }
+  }
+
+  return null;
+}
+
 function buildAiPrompt(state) {
-  const departments = getDepartmentNames(state);
-  const departmentList = departments.map((department) => `- ${department}`).join('\n');
+  const departmentList = getDepartmentPromptRows(state).join('\n');
 
   return [
     'Du är en kortfattad routingassistent i en beställningsportal.',
     'Ditt huvudmål är att så snabbt som möjligt rekommendera rätt avdelning.',
     'Du får alltid den aktuella listan över skapade och tillgängliga avdelningar nedan.',
     'Du får bara rekommendera en avdelning om namnet finns exakt i listan. Hitta aldrig på egna avdelningsnamn.',
-    'Tillgängliga avdelningar:',
+    'Tillgängliga avdelningar och vad de behandlar just nu:',
     departmentList,
+    'Använd beskrivningarna ovan som primär källa när du väljer avdelning.',
     'Skriv på svenska, kort och direkt. Använd normalt högst en kort mening före kommandoraden.',
     'När du rekommenderar en avdelning måste du alltid skriva minst en kort vanlig mening före kommandoraden.',
     'Svara aldrig med enbart kommandoraden. Kommandoraden är endast för systemet, inte för användaren.',
@@ -672,6 +1265,21 @@ async function getAiDepartmentSuggestion(messages, { fetchFn = globalThis.fetch,
     }
 
     if (suggestion && suggestion.reply) {
+      const inferredSuggestion = inferAiSuggestionFromText(messages, suggestion.reply, state);
+      if (inferredSuggestion && inferredSuggestion.department) {
+        return {
+          suggestion: {
+            ...inferredSuggestion,
+            source: 'server_fallback',
+          },
+          reply: inferredSuggestion.reply,
+          rawResponse,
+          availableDepartments: departments,
+          model,
+          source: 'server_fallback',
+        };
+      }
+
       return {
         suggestion: null,
         reply: suggestion.reply,
@@ -833,16 +1441,22 @@ async function getAiDepartmentSuggestionStream(messages, { fetchFn = globalThis.
         ? `${rawThinking}${rawContent}`
         : rawResponse;
       const suggestion = extractAiSuggestion(rawResponse, state);
-      const reply = suggestion && suggestion.department
-        ? stripRecommendationCommand(rawResponse) || defaultRecommendationReply(suggestion.department)
+      const inferredSuggestion = suggestion && suggestion.department
+        ? null
+        : inferAiSuggestionFromText(messages, suggestion && suggestion.reply ? suggestion.reply : rawResponse, state);
+      const finalSuggestion = suggestion && suggestion.department
+        ? suggestion
+        : inferredSuggestion;
+      const reply = finalSuggestion && finalSuggestion.department
+        ? stripRecommendationCommand(rawResponse) || defaultRecommendationReply(finalSuggestion.department)
         : stripRecommendationCommand(rawResponse);
 
       writeNdjson(write, {
         type: 'final',
-        suggestion: suggestion && suggestion.department ? {
-          ...suggestion,
+        suggestion: finalSuggestion && finalSuggestion.department ? {
+          ...finalSuggestion,
           reply,
-          source: 'ollama',
+          source: finalSuggestion.inferred ? 'server_fallback' : 'ollama',
         } : null,
         reply,
         rawThinking,
@@ -850,7 +1464,7 @@ async function getAiDepartmentSuggestionStream(messages, { fetchFn = globalThis.
         fullResponse,
         availableDepartments: departments,
         model,
-        source: 'ollama',
+        source: finalSuggestion && finalSuggestion.inferred ? 'server_fallback' : 'ollama',
       });
     } catch (error) {
       if (signal && signal.aborted) {
@@ -863,6 +1477,15 @@ async function getAiDepartmentSuggestionStream(messages, { fetchFn = globalThis.
     }
   });
 }
+function generatePassword(length = 12) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let password = '';
+  const bytes = crypto.randomBytes(length);
+  for (let i = 0; i < length; i++) {
+    password += chars[bytes[i] % chars.length];
+  }
+  return password;
+}
 function createApp(options = {}) {
   const state = options.state || loadState(options.dataFile);
   const dataFile = options.dataFile || DATA_FILE;
@@ -870,14 +1493,15 @@ function createApp(options = {}) {
 
   async function handle({ method, path: requestPath, headers = {}, body = '', signal = null }) {
     const url = new URL(requestPath, 'http://localhost');
+    const requestUser = findUserByEmail(state, headers['x-bportal-user-email'] || headers['X-Bportal-User-Email']);
 
     if (method === 'OPTIONS') {
       return {
         statusCode: 204,
         headers: {
           'access-control-allow-origin': '*',
-          'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
-          'access-control-allow-headers': 'content-type',
+          'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+          'access-control-allow-headers': 'content-type,x-bportal-user-email',
         },
         body: '',
       };
@@ -888,7 +1512,6 @@ function createApp(options = {}) {
         ok: true,
         service: 'bportalen-backend',
         departments: getDepartmentNames(state),
-        departmentEmails: getDepartmentEmails(state),
       });
     }
 
@@ -908,6 +1531,8 @@ function createApp(options = {}) {
     }
 
     if (method === 'PUT' && url.pathname === '/api/departments') {
+      if (!isAdminRequest(state, headers)) return json(403, { error: 'admin_required' });
+
       const payload = parseBody(body);
       if (!payload) return json(400, { error: 'invalid_json' });
 
@@ -924,28 +1549,332 @@ function createApp(options = {}) {
       const payload = parseBody(body);
       if (!payload) return json(400, { error: 'invalid_json' });
 
-      const match = USERS.find((entry) => (
-        entry.username === payload.username && entry.password === payload.password
-      ));
+      const userEntry = db.prepare('SELECT * FROM users WHERE username = ?').get(payload.username);
 
-      if (!match) return json(401, { error: 'invalid_credentials' });
-      return json(200, { user: match.user });
+      if (!userEntry || !bcrypt.compareSync(payload.password, userEntry.password_hash)) {
+          return json(401, { error: 'invalid_credentials' });
+      }
+      
+      // Reconstruct user object to match expected format
+      const stateUser = normalizeUsers(state.users).find((u) => u.username === userEntry.username);
+      const user = {
+          username: userEntry.username,
+          name: userEntry.name,
+          role: userEntry.role,
+          email: userEntry.email,
+          ...(stateUser ? { group: stateUser.user.group || '', groups: normalizeUserGroups(stateUser.user) } : {}),
+      };
+
+      const settings = getUserSettings(state, stateUser && stateUser.user || { email: userEntry.email });
+      
+      return json(200, { user, settings });
+    }
+
+    if (method === 'GET' && url.pathname === '/api/users') {
+      return json(200, {
+        users: normalizeUsers(state.users).map(publicUserEntry),
+      });
+    }
+
+    if (method === 'POST' && url.pathname === '/api/users') {
+      const payload = parseBody(body);
+      if (!payload) return json(400, { error: 'invalid_json' });
+
+      const details = validateUserPayload(payload, state);
+      if (details.length > 0) {
+        return json(400, { error: 'invalid_user', details });
+      }
+
+      const userEntry = safeUserEntry(payload, state);
+      state.users = normalizeUsers(state.users);
+      state.users.push(userEntry);
+      if (persist) saveState(state, dataFile);
+
+      upsertUserInDb(userEntry.username, userEntry.password, userEntry.user);
+
+      return json(201, { user: publicUserEntry(userEntry) });
+    }
+
+    const userActionMatch = url.pathname.match(/^\/api\/users\/([^/]+)\/(send-login|reset-password|impersonate)$/);
+    if (method === 'POST' && userActionMatch) {
+      if (!isAdminRequest(state, headers)) return json(403, { error: 'admin_required' });
+
+      const username = decodeURIComponent(userActionMatch[1]);
+      const users = normalizeUsers(state.users);
+      const index = users.findIndex((entry) => entry.username === username);
+      if (index === -1) return json(404, { error: 'user_not_found' });
+
+      const action = userActionMatch[2];
+      const user = users[index];
+
+      if (action === 'send-login') {
+        const loginUrl = 'https://resultatmedai.se/demo';
+        notifyByEmail({
+          to: user.user.email,
+          subject: 'Dina inloggningsuppgifter till Ambitionsverige Bportal',
+          text: [
+            `Hej ${user.user.name}!`,
+            '',
+            'Välkommen till Ambitionsverige Bportal – beställningssystemet för alla partiaktiva.',
+            'Här kan du skicka frågor och beställningar till rätt avdelning, oavsett om det',
+            'gäller marknadsföring, grafiskt material, juridiska frågor eller annat.',
+            '',
+            'Här är dina inloggningsuppgifter till demoversionen:',
+            '',
+            `Användarnamn: ${user.username}`,
+            `Lösenord: ${user.password}`,
+            '',
+            'Logga in på Bportal via knappen i det HTML-formaterade mejlet.',
+            '',
+            'Hälsningar,',
+            'IT-teamet',
+            'Ambition Sverige',
+          ].join('\n'),
+          html: [
+            '<!DOCTYPE html>',
+            '<html>',
+            '<head><meta charset="utf-8"></head>',
+            '<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif">',
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:30px 10px">',
+            '<tr><td align="center">',
+            '<table role="presentation" width="540" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden">',
+            '<tr><td style="background:#1a5c8a;padding:30px;text-align:center">',
+            '<h1 style="color:#ffffff;margin:0;font-size:22px">Ambitionsverige Bportal</h1>',
+            '</td></tr>',
+            '<tr><td style="padding:35px 30px">',
+            `<p style="font-size:16px;color:#333;margin:0 0 20px">Hej ${user.user.name}!</p>`,
+            '<p style="font-size:15px;color:#555;margin:0 0 10px">Välkommen till Ambitionsverige Bportal – beställningssystemet för alla partiaktiva.</p>',
+            '<p style="font-size:15px;color:#555;margin:0 0 25px">Här kan du skicka frågor och beställningar till rätt avdelning, oavsett om det gäller marknadsföring, grafiskt material, juridiska frågor eller annat.</p>',
+            '<p style="font-size:15px;color:#555;margin:0 0 25px">Här är dina inloggningsuppgifter till <strong>demoversionen</strong>:</p>',
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0f7fc;border-radius:6px;padding:20px;margin:0 0 25px">',
+            `<tr><td style="font-size:14px;color:#888;padding:5px 0">Användarnamn</td></tr>`,
+            `<tr><td style="font-size:16px;color:#1a5c8a;font-weight:bold;padding:0 0 15px">${user.username}</td></tr>`,
+            `<tr><td style="font-size:14px;color:#888;padding:5px 0">Lösenord</td></tr>`,
+            `<tr><td style="font-size:16px;color:#1a5c8a;font-weight:bold;padding:0 0 5px">${user.password}</td></tr>`,
+            '</table>',
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">',
+            '<tr><td align="center" style="padding:0 0 25px">',
+            `<a href="${loginUrl}" style="display:inline-block;background:#1a5c8a;color:#ffffff;text-decoration:none;font-size:16px;font-weight:bold;padding:14px 40px;border-radius:6px">Logga in på Bportal</a>`,
+            '</td></tr>',
+            '</table>',
+            '</td></tr>',
+            '<tr><td style="background:#f9f9f9;padding:20px 30px;text-align:center;border-top:1px solid #eee">',
+            '<p style="font-size:14px;color:#888;margin:0">Hälsningar,<br>IT-teamet<br>Ambition Sverige</p>',
+            '</td></tr>',
+            '</table>',
+            '</td></tr>',
+            '</table>',
+            '</body>',
+            '</html>',
+          ].join('\n'),
+        });
+
+        return json(200, { ok: true });
+      }
+
+      if (action === 'reset-password') {
+        const newPassword = generatePassword();
+        users[index].password = newPassword;
+        state.users = users;
+        if (persist) saveState(state, dataFile);
+
+        upsertUserInDb(users[index].username, newPassword, users[index].user);
+
+        const loginUrl = 'https://resultatmedai.se/demo';
+        notifyByEmail({
+          to: user.user.email,
+          subject: 'Ditt lösenord har återställts - Ambitionsverige Bportal',
+          text: [
+            `Hej ${user.user.name}!`,
+            '',
+            'Ambitionsverige Bportal är beställningssystemet för alla partiaktiva.',
+            'Här kan du skicka frågor och beställningar till rätt avdelning.',
+            '',
+            'Ditt lösenord har återställts av en administratör.',
+            '',
+            `Användarnamn: ${user.username}`,
+            `Nytt lösenord: ${newPassword}`,
+            '',
+            'Logga in på Bportal via knappen i det HTML-formaterade mejlet.',
+            '',
+            'Hälsningar,',
+            'IT-teamet',
+            'Ambition Sverige',
+          ].join('\n'),
+          html: [
+            '<!DOCTYPE html>',
+            '<html>',
+            '<head><meta charset="utf-8"></head>',
+            '<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif">',
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:30px 10px">',
+            '<tr><td align="center">',
+            '<table role="presentation" width="540" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden">',
+            '<tr><td style="background:#1a5c8a;padding:30px;text-align:center">',
+            '<h1 style="color:#ffffff;margin:0;font-size:22px">Ambitionsverige Bportal</h1>',
+            '</td></tr>',
+            '<tr><td style="padding:35px 30px">',
+            `<p style="font-size:16px;color:#333;margin:0 0 20px">Hej ${user.user.name}!</p>`,
+            '<p style="font-size:15px;color:#555;margin:0 0 10px">Ambitionsverige Bportal är beställningssystemet för alla partiaktiva.</p>',
+            '<p style="font-size:15px;color:#555;margin:0 0 25px">Här kan du skicka frågor och beställningar till rätt avdelning.</p>',
+            '<p style="font-size:15px;color:#555;margin:0 0 25px">Ditt lösenord har återställts av en administratör. Här är dina uppgifter till <strong>demoversionen</strong>:</p>',
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0f7fc;border-radius:6px;padding:20px;margin:0 0 25px">',
+            `<tr><td style="font-size:14px;color:#888;padding:5px 0">Användarnamn</td></tr>`,
+            `<tr><td style="font-size:16px;color:#1a5c8a;font-weight:bold;padding:0 0 15px">${user.username}</td></tr>`,
+            `<tr><td style="font-size:14px;color:#888;padding:5px 0">Nytt lösenord</td></tr>`,
+            `<tr><td style="font-size:16px;color:#1a5c8a;font-weight:bold;padding:0 0 5px">${newPassword}</td></tr>`,
+            '</table>',
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">',
+            '<tr><td align="center" style="padding:0 0 25px">',
+            `<a href="${loginUrl}" style="display:inline-block;background:#1a5c8a;color:#ffffff;text-decoration:none;font-size:16px;font-weight:bold;padding:14px 40px;border-radius:6px">Logga in på Bportal</a>`,
+            '</td></tr>',
+            '</table>',
+            '</td></tr>',
+            '<tr><td style="background:#f9f9f9;padding:20px 30px;text-align:center;border-top:1px solid #eee">',
+            '<p style="font-size:14px;color:#888;margin:0">Hälsningar,<br>IT-teamet<br>Ambition Sverige</p>',
+            '</td></tr>',
+            '</table>',
+            '</td></tr>',
+            '</table>',
+            '</body>',
+            '</html>',
+          ].join('\n'),
+        });
+
+        return json(200, { ok: true });
+      }
+
+      if (action === 'impersonate') {
+        const adminEmail = headers['x-bportal-user-email'] || headers['X-Bportal-User-Email'];
+        console.log(`[AUDIT] User ${adminEmail} started impersonating user ${user.username}`);
+        
+        // Re-fetch the latest user data from the normalized state
+        const currentUsers = normalizeUsers(state.users);
+        const latestUserEntry = currentUsers.find(u => u.username === user.username);
+        const userData = latestUserEntry ? latestUserEntry.user : user;
+
+        const impersonateUser = {
+          username: user.username,
+          name: userData.name,
+          role: userData.role,
+          email: userData.email,
+          group: userData.group || '',
+          groups: normalizeUserGroups(userData),
+        };
+        const settings = getUserSettings(state, impersonateUser);
+        return json(200, { user: impersonateUser, settings });
+      }
+    }
+
+    const userMatch = url.pathname.match(/^\/api\/users\/([^/]+)$/);
+    if (method === 'PUT' && userMatch) {
+      const username = decodeURIComponent(userMatch[1]);
+      const users = normalizeUsers(state.users);
+      const index = users.findIndex((entry) => entry.username === username);
+      if (index === -1) return json(404, { error: 'user_not_found' });
+
+      const payload = parseBody(body);
+      if (!payload) return json(400, { error: 'invalid_json' });
+
+      const details = validateUserPayload(payload, { ...state, users }, username, { requirePassword: false });
+      if (details.length > 0) {
+        return json(400, { error: 'invalid_user', details });
+      }
+
+      users[index] = safeUserEntry(payload, state, users[index]);
+      state.users = users;
+      if (persist) saveState(state, dataFile);
+
+      upsertUserInDb(users[index].username, users[index].password, users[index].user);
+
+      return json(200, { user: publicUserEntry(users[index]) });
+    }
+
+    if (method === 'DELETE' && userMatch) {
+      const username = decodeURIComponent(userMatch[1]);
+      const users = normalizeUsers(state.users);
+      const index = users.findIndex((entry) => entry.username === username);
+      if (index === -1) return json(404, { error: 'user_not_found' });
+      if (users[index].user.role === 'admin' && users.filter((entry) => entry.user.role === 'admin').length === 1) {
+        return json(400, { error: 'last_admin' });
+      }
+
+      const [removed] = users.splice(index, 1);
+      state.users = users;
+      state.userSettings = normalizeUserSettingsMap(state.userSettings);
+      delete state.userSettings[userSettingsKey(removed.user.email)];
+      if (persist) saveState(state, dataFile);
+
+      deleteUserFromDb(removed.username);
+
+      return json(200, { ok: true });
+    }
+
+    if (method === 'GET' && url.pathname === '/api/user-settings') {
+      const user = findUserByEmail(state, url.searchParams.get('email'));
+      if (!user) return json(404, { error: 'user_not_found' });
+      return json(200, { settings: getUserSettings(state, user) });
+    }
+
+    if (method === 'PUT' && url.pathname === '/api/user-settings') {
+      const payload = parseBody(body);
+      if (!payload) return json(400, { error: 'invalid_json' });
+      const user = findUserByEmail(state, payload.email);
+      if (!user) return json(404, { error: 'user_not_found' });
+      const settings = setUserSettings(state, user, payload.settings);
+      if (persist) saveState(state, dataFile);
+      return json(200, { settings });
     }
 
     if (method === 'GET' && url.pathname === '/api/orders') {
       const dept = url.searchParams.get('dept');
       const normalizedDept = dept ? normalizeDepartmentName(dept, state) : '';
       const from = url.searchParams.get('from');
+      const fromUsername = url.searchParams.get('fromUsername');
+      const fromEmail = url.searchParams.get('fromEmail');
       if (dept && !normalizedDept) return json(200, { orders: [] });
 
       const orders = state.orders.filter((order) => (
         (!dept || order.dept === normalizedDept || normalizeDepartmentName(order.dept, state) === normalizedDept)
         && (!from || order.from === from)
+        && (!fromUsername || String(order.fromUsername || '').trim().toLowerCase() === String(fromUsername || '').trim().toLowerCase())
+        && (!fromEmail || String(order.fromEmail || '').trim().toLowerCase() === String(fromEmail || '').trim().toLowerCase())
       ));
 
       return json(200, { orders });
     }
 
+    if (method === 'POST' && url.pathname.match(/^\/api\/orders\/([^/]+)\/chat$/)) {
+      const orderId = url.pathname.match(/^\/api\/orders\/([^/]+)\/chat$/)[1];
+      const order = state.orders.find(o => o.id === orderId);
+      if (!order) return json(404, { error: 'order_not_found' });
+      if (!canAccessOrderChat(state, order, requestUser)) return json(403, { error: 'chat_forbidden' });
+
+      const payload = parseBody(body);
+      if (!payload || !payload.message) return json(400, { error: 'invalid_message' });
+
+      if (!order.chat) order.chat = [];
+      const message = {
+        id: Date.now().toString(),
+        from: requestUser.name,
+        fromEmail: requestUser.email,
+        text: payload.message,
+        timestamp: new Date().toISOString()
+      };
+      order.chat.push(message);
+      if (persist) saveState(state, dataFile);
+
+      return json(201, { message });
+    }
+
+    if (method === 'GET' && url.pathname.match(/^\/api\/orders\/([^/]+)\/chat$/)) {
+      const orderId = url.pathname.match(/^\/api\/orders\/([^/]+)\/chat$/)[1];
+      const order = state.orders.find(o => o.id === orderId);
+      if (!order) return json(404, { error: 'order_not_found' });
+      if (!canAccessOrderChat(state, order, requestUser)) return json(403, { error: 'chat_forbidden' });
+
+      return json(200, { chat: order.chat || [] });
+    }
+    
     if (method === 'POST' && url.pathname === '/api/orders') {
       const payload = parseBody(body);
       if (!payload) return json(400, { error: 'invalid_json' });
@@ -955,9 +1884,10 @@ function createApp(options = {}) {
         return json(400, { error: 'invalid_order', details });
       }
 
-      const order = safeOrder(payload, state);
+      const order = safeOrder(payload, state, requestUser);
       state.orders.unshift(order);
       if (persist) saveState(state, dataFile);
+      notifyGroupOrder(state, order);
 
       return json(201, { order });
     }
@@ -1008,6 +1938,7 @@ function createApp(options = {}) {
       order.proposals.unshift(proposal);
       order.status = 'På remiss';
       if (persist) saveState(state, dataFile);
+      notifyOrdererProposal(state, order, proposal);
 
       return json(201, { order, proposal });
     }
@@ -1034,6 +1965,7 @@ function createApp(options = {}) {
       };
       order.status = payload.completed ? 'Avklarad' : 'Behöver ändras';
       if (persist) saveState(state, dataFile);
+      notifyGroupReview(state, order, proposal.review);
 
       return json(200, { order, proposal });
     }
@@ -1063,6 +1995,11 @@ function createApp(options = {}) {
       return json(200, { order });
     }
 
+    if (method === 'GET' && url.pathname === '/admin_overview_orders.html') {
+      const html = fs.readFileSync(path.join(__dirname, 'admin_overview_orders.html'), 'utf8');
+      return text(200, html, 'text/html; charset=utf-8');
+    }
+
     if (method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       const html = fs.readFileSync(path.join(ROOT_DIR, 'index.html'), 'utf8');
       return text(200, html, 'text/html; charset=utf-8');
@@ -1071,6 +2008,34 @@ function createApp(options = {}) {
     if (method === 'GET' && url.pathname === '/assets/b-logo.svg') {
       const logo = fs.readFileSync(path.join(ROOT_DIR, 'assets', 'b-logo.svg'), 'utf8');
       return text(200, logo, 'image/svg+xml; charset=utf-8');
+    }
+
+    if (method === 'GET' && url.pathname.startsWith('/assets/')) {
+      const assetPath = path.normalize(url.pathname.replace(/^\/assets\//, ''));
+      const filePath = path.join(ROOT_DIR, 'assets', assetPath);
+      const assetsDir = path.join(ROOT_DIR, 'assets');
+
+      if (!filePath.startsWith(assetsDir + path.sep) && filePath !== path.join(assetsDir, assetPath)) {
+        return json(404, { error: 'not_found' });
+      }
+
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+        return json(404, { error: 'not_found' });
+      }
+
+      const ext = path.extname(filePath).toLowerCase();
+      const contentType = {
+        '.css': 'text/css; charset=utf-8',
+        '.svg': 'image/svg+xml; charset=utf-8',
+        '.js': 'application/javascript; charset=utf-8',
+        '.json': 'application/json; charset=utf-8',
+        '.txt': 'text/plain; charset=utf-8',
+      }[ext] || 'application/octet-stream';
+      const encoding = contentType.startsWith('text/') || contentType.includes('javascript') || contentType.includes('json')
+        ? 'utf8'
+        : undefined;
+      const body = encoding ? fs.readFileSync(filePath, encoding) : fs.readFileSync(filePath);
+      return text(200, body, contentType);
     }
 
     if (method === 'GET' && url.pathname === '/ui-helpers.js') {
@@ -1154,6 +2119,11 @@ function createApp(options = {}) {
         });
       });
 
+      server.on('error', (error) => {
+        console.error(`Bportalen backend kunde inte starta: ${error.message}`);
+        process.exitCode = 1;
+      });
+
       return host
         ? server.listen(port, host, onListening)
         : server.listen(port, onListening);
@@ -1179,7 +2149,6 @@ module.exports = {
   abortOllamaWarmup,
   getAiModelStatus,
   DEPARTMENTS,
-  DEPARTMENT_EMAILS,
   DEFAULT_DEPARTMENT_RECORDS,
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_SIZE,

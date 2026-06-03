@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animerad Whiteboard-simulering</title>
+    <style>
+        /* Whiteboard-bakgrund med subtilt rutmönster */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f4f6f8;
+            background-image: radial-gradient(#d1d5db 1px, transparent 1px);
+            background-size: 24px 24px;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        h1 {
+            margin: 10px 0 5px 0;
+            color: #2c3e50;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        p {
+            margin: 0 0 20px 0;
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        /* Huvudbehållare för whiteboarden */
+        #whiteboard {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            background: #ffffff;
+            border: 4px solid #34495e;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        /* SVG-lager för linjer som ligger bakom noderna */
+        svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* Stil för linjerna */
+        .connector-line {
+            stroke: #bdc3c7;
+            stroke-width: 3;
+            stroke-dasharray: 6, 6;
+            animation: dash 30s linear infinite;
+        }
+
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -1000;
+            }
+        }
+
+        /* Central cirkel (Hub) */
+        .node-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 90px;
+            height: 90px;
+            background: #3498db;
+            border: 4px solid #2980b9;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+            box-shadow: 0 6px 12px rgba(52, 152, 219, 0.3);
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        /* Yttre boxar */
+        .node-box {
+            position: absolute;
+            width: 130px;
+            height: 60px;
+            background: #ffffff;
+            border: 3px solid #2c3e50;
+            border-radius: 8px;
+            z-index: 3;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: bold;
+            color: #2c3e50;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.08);
+            transform: translate(-50%, -50%);
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .node-desc {
+            font-size: 11px;
+            color: #7f8c8d;
+            font-weight: normal;
+            margin-top: 2px;
+        }
+
+        /* Meddelandebubbla (Paket) */
+        .message-pill {
+            position: absolute;
+            padding: 5px 10px;
+            color: white;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: bold;
+            z-index: 2;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            white-space: nowrap;
+        }
+
+        /* Färgkategorier för olika typer av meddelanden */
+        .msg-request {
+            background-color: #e67e22; /* Orange för förfrågningar */
+            box-shadow: 0 4px 10px rgba(230, 126, 34, 0.4);
+        }
+
+        .msg-response {
+            background-color: #2ecc71; /* Grön för svar */
+            box-shadow: 0 4px 10px rgba(46, 204, 113, 0.4);
+        }
+
+        /* Kontrollpanel */
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 12px;
+        }
+
+        button {
+            background: #2c3e50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        button:hover {
+            background: #34495e;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button.toggle-active {
+            background: #27ae60;
+        }
+
+        button.toggle-active:hover {
+            background: #2ecc71;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Whiteboard-simulering</h1>
+    <p>Visualisering av nätverkskommunikation i realtid</p>
+
+    <!-- Själva whiteboardytan -->
+    <div id="whiteboard">
+        <!-- SVG ritar linjerna -->
+        <svg id="svg-connections"></svg>
+
+        <!-- Central nod -->
+        <div class="node-center" id="hub">Hub</div>
+    </div>
+
+    <!-- Kontroller -->
+    <div class="controls">
+        <button id="btn-manual">Skicka manuellt meddelande</button>
+        <button id="btn-toggle" class="toggle-active">Auto-ström: PÅ</button>
+    </div>
+
+    <script>
+        const whiteboard = document.getElementById('whiteboard');
+        const svg = document.getElementById('svg-connections');
+        const btnManual = document.getElementById('btn-manual');
+        const btnToggle = document.getElementById('btn-toggle');
+
+        // Inställningar för geometri
+        const centerX = 400;
+        const centerY = 300;
+        const radius = 210; // Avstånd från centrum till de yttre boxarna
+
+        // Konfiguration för de yttre boxarna
+        const nodeTemplates = [
+            { name: "Webbklient", desc: "Användargränssnitt" },
+            { name: "API Gateway", desc: "Routing & Auth" },
+            { name: "Databas", desc: "PostgreSQL" },
+            { name: "Cache", desc: "Redis" },
+            { name: "Auth Service", desc: "OAuth2" }
+        ];
+
+        // Lista med simulerade meddelanden
+        const requests = ["GET /users", "POST /login", "GET /status", "PUT /settings", "DELETE /session"];
+        const responses = ["200 OK", "201 Created", "401 Unauthorized", "403 Forbidden", "500 Error"];
+
+        const nodes = [];
+        let autoInterval = null;
+        let autoSending = true;
+
+        // Skapa och placera ut nätverksnoder dynamiskt
+        nodeTemplates.forEach((template, index) => {
+            // Beräkna vinkel för jämn fördelning runt cirkeln (-90 grader startar överst)
+            const angle = (index * 2 * Math.PI) / nodeTemplates.length - Math.PI / 2;
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius;
+
+            // Skapa HTML-element för boxen
+            const nodeEl = document.createElement('div');
+            nodeEl.className = 'node-box';
+            nodeEl.style.left = `${x}px`;
+            nodeEl.style.top = `${y}px`;
+            nodeEl.innerHTML = `
+                <div>${template.name}</div>
+                <div class="node-desc">${template.desc}</div>
+            `;
+            whiteboard.appendChild(nodeEl);
+
+            // Skapa SVG-linje från hub till box
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", centerX);
+            line.setAttribute("y1", centerY);
+            line.setAttribute("x2", x);
+            line.setAttribute("y2", y);
+            line.setAttribute("class", "connector-line");
+            svg.appendChild(line);
+
+            // Spara data för animering
+            nodes.push({
+                element: nodeEl,
+                x: x,
+                y: y
+            });
+        });
+
+        // Funktion för att animera ett meddelande (pill) längs en linje
+        function animateMessage(startX, startY, endX, endY, text, type, targetElement) {
+            const pill = document.createElement('div');
+            pill.className = `message-pill ${type === 'request' ? 'msg-request' : 'msg-response'}`;
+            pill.innerText = text;
+            whiteboard.appendChild(pill);
+
+            const duration = 1800; // Tid i millisekunder för resan
+            const startTime = performance.now();
+
+            function updatePosition(now) {
+                const elapsed = now - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+
+                // Linjär interpolation (LERP) för x och y
+                const currentX = startX + (endX - startX) * progress;
+                const currentY = startY + (endY - startY) * progress;
+
+                pill.style.left = `${currentX}px`;
+                pill.style.top = `${currentY}px`;
+
+                if (progress < 1) {
+                    requestAnimationFrame(updatePosition);
+                } else {
+                    pill.remove();
+                    triggerPulse(targetElement);
+                }
+            }
+
+            requestAnimationFrame(updatePosition);
+        }
+
+        // Visuell effekt när ett meddelande når fram till en nod
+        function triggerPulse(element) {
+            const originalTransform = element.style.transform;
+            const isHub = element.id === 'hub';
+            
+            element.style.transform = isHub 
+                ? 'translate(-50%, -50%) scale(1.15)' 
+                : 'translate(-50%, -50%) scale(1.08)';
+            element.style.borderColor = '#e74c3c';
+
+            setTimeout(() => {
+                element.style.transform = originalTransform;
+                element.style.borderColor = '';
+            }, 250);
+        }
+
+        // Funktion för att slumpa fram och skicka ett meddelande
+        function sendRandomMessage() {
+            const randomNode = nodes[Math.floor(Math.random() * nodes.length)];
+            const direction = Math.random() > 0.5 ? 'outgoing' : 'incoming';
+
+            if (direction === 'outgoing') {
+                // Från centrum till en yttre box (Request)
+                const text = requests[Math.floor(Math.random() * requests.length)];
+                animateMessage(centerX, centerY, randomNode.x, randomNode.y, text, 'request', randomNode.element);
+            } else {
+                // Från en yttre box till centrum (Response)
+                const text = responses[Math.floor(Math.random() * responses.length)];
+                animateMessage(randomNode.x, randomNode.y, centerX, centerY, text, 'response', document.getElementById('hub'));
+            }
+        }
+
+        // Starta den automatiska simuleringen
+        function startAuto() {
+            autoInterval = setInterval(sendRandomMessage, 1200);
+        }
+
+        // Stoppa den automatiska simuleringen
+        function stopAuto() {
+            clearInterval(autoInterval);
+        }
+
+        // Event-lyssnare för manuellt meddelande
+        btnManual.addEventListener('click', sendRandomMessage);
+
+        // Event-lyssnare för att slå på/av automatisk ström
+        btnToggle.addEventListener('click', () => {
+            autoSending = !autoSending;
+            if (autoSending) {
+                btnToggle.textContent = "Auto-ström: PÅ";
+                btnToggle.classList.add('toggle-active');
+                startAuto();
+            } else {
+                btnToggle.textContent = "Auto-ström: AV";
+                btnToggle.classList.remove('toggle-active');
+                stopAuto();
+            }
+        });
+
+        // Starta simuleringen vid laddning
+        startAuto();
+    </script>
+</body>
+</html>

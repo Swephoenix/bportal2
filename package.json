@@ -1,0 +1,15 @@
+{
+  "name": "bportalen-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Frontend build tooling for Bportalen.",
+  "scripts": {
+    "build:tailwind": "tailwindcss -c tailwind.config.cjs -i ./assets/tailwind-input.css -o ./assets/tailwind.css --minify",
+    "start:backend": "cd backend && npm start",
+    "start": "npm run build:tailwind && npm run start:backend",
+    "test": "cd backend && npm test"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  }
+}

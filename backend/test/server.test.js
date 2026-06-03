@@ -5,17 +5,16 @@ const {
   createApp,
   createDefaultState,
   DEPARTMENTS,
-  DEPARTMENT_EMAILS,
   warmOllamaModel,
   startOllamaWarmupLoop,
   abortOllamaWarmup,
 } = require('../server');
 
-async function request(app, method, path, body) {
+async function request(app, method, path, body, headers = {}) {
   const response = await app.inject({
     method,
     path,
-    headers: body ? { 'content-type': 'application/json' } : {},
+    headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...headers },
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -41,7 +40,7 @@ test('GET /api/health reports the backend is ready', async () => {
   assert.equal(response.body.ok, true);
   assert.equal(response.body.service, 'bportalen-backend');
   assert.deepEqual(response.body.departments, DEPARTMENTS);
-  assert.equal(response.body.departmentEmails.Grafikgruppen, DEPARTMENT_EMAILS.Grafikgruppen);
+  assert.equal(response.body.departmentEmails, undefined);
   assert.equal(response.body.departments.includes('IT-support / Mjukvara'), true);
 });
 
@@ -107,13 +106,27 @@ test('GET /assets/b-logo.svg serves the b logo', async () => {
   assert.match(response.body, /<svg/);
 });
 
-test('GET /api/departments lists department names and emails', async () => {
+test('GET /assets/tailwind.css serves the generated stylesheet', async () => {
+  const app = freshApp();
+  const response = await app.inject({
+    method: 'GET',
+    path: '/assets/tailwind.css',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['content-type'], 'text/css; charset=utf-8');
+  assert.match(response.body, /@tailwind|\.bg-/);
+});
+
+test('GET /api/departments lists department names and descriptions', async () => {
   const app = freshApp();
   const response = await request(app, 'GET', '/api/departments');
 
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.departments.some((department) => (
-    department.name === 'Grafikgruppen' && department.email === 'grafikgruppen@example.com'
+    department.name === 'Grafikgruppen'
+    && department.email === undefined
+    && department.description.includes('Grafik')
   )), true);
 });
 
@@ -121,15 +134,33 @@ test('PUT /api/departments updates departments used by orders', async () => {
   const app = freshApp();
   const updated = await request(app, 'PUT', '/api/departments', {
     departments: [
-      { name: 'Chefens avdelning', email: 'chefen@example.com' },
-      { name: 'Grafikgruppen', email: 'ny-grafik@example.com' },
+      {
+        name: 'Chefens avdelning',
+        description: 'Ledningsfrågor och prioriterade interna beställningar.',
+      },
+      {
+        name: 'Grafikgruppen',
+        description: 'Grafiska beställningar.',
+      },
     ],
+  }, {
+    'x-bportal-user-email': 'admin@example.com',
   });
 
   assert.equal(updated.statusCode, 200);
   assert.deepEqual(updated.body.departments, [
-    { name: 'Chefens avdelning', email: 'chefen@example.com' },
-    { name: 'Grafikgruppen', email: 'ny-grafik@example.com' },
+    {
+      name: 'Chefens avdelning',
+      description: 'Ledningsfrågor och prioriterade interna beställningar.',
+    },
+    {
+      name: 'Grafikgruppen',
+      description: 'Grafiska beställningar.',
+    },
+    {
+      name: 'Boka zoom-möte',
+      description: 'Bokning och planering av digitala möten i Zoom.',
+    },
   ]);
 
   const created = await request(app, 'POST', '/api/orders', {
@@ -141,20 +172,42 @@ test('PUT /api/departments updates departments used by orders', async () => {
 
   assert.equal(created.statusCode, 201);
   assert.equal(created.body.order.dept, 'Chefens avdelning');
-  assert.equal(created.body.order.deptEmail, 'chefen@example.com');
+  assert.equal(created.body.order.deptEmail, undefined);
 });
 
 test('PUT /api/departments keeps Grafikgruppen even if it is omitted', async () => {
   const app = freshApp();
   const updated = await request(app, 'PUT', '/api/departments', {
     departments: [
-      { name: 'Chefens avdelning', email: 'chefen@example.com' },
+      { name: 'Chefens avdelning' },
     ],
+  }, {
+    'x-bportal-user-email': 'admin@example.com',
   });
 
   assert.equal(updated.statusCode, 200);
   assert.equal(updated.body.departments.some((department) => (
-    department.name === 'Grafikgruppen' && department.email === 'grafikgruppen@example.com'
+    department.name === 'Grafikgruppen'
+    && department.email === undefined
+    && department.description.includes('Grafik')
+  )), true);
+});
+
+test('PUT /api/departments keeps Boka zoom-möte even if it is omitted', async () => {
+  const app = freshApp();
+  const updated = await request(app, 'PUT', '/api/departments', {
+    departments: [
+      { name: 'Chefens avdelning' },
+    ],
+  }, {
+    'x-bportal-user-email': 'admin@example.com',
+  });
+
+  assert.equal(updated.statusCode, 200);
+  assert.equal(updated.body.departments.some((department) => (
+    department.name === 'Boka zoom-möte'
+    && department.email === undefined
+    && department.description.includes('Zoom')
   )), true);
 });
 
@@ -168,17 +221,161 @@ test('OPTIONS /api/orders allows browser preflight requests', async () => {
   assert.equal(response.statusCode, 204);
   assert.equal(response.headers['access-control-allow-origin'], '*');
   assert.match(response.headers['access-control-allow-methods'], /POST/);
+  assert.match(response.headers['access-control-allow-headers'], /x-bportal-user-email/);
 });
 
-test('POST /api/login accepts the orderer demo account', async () => {
+test('PUT /api/departments requires admin user', async () => {
+  const app = freshApp();
+  const response = await request(app, 'PUT', '/api/departments', {
+    departments: [
+      { name: 'Chefens avdelning' },
+    ],
+  }, {
+    'x-bportal-user-email': 'personal@example.com',
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.error, 'admin_required');
+});
+
+test('POST /api/login accepts a demo member account', async () => {
   const app = freshApp();
   const response = await request(app, 'POST', '/api/login', {
-    username: 'user',
-    password: 'user',
+    username: 'anda99b6c',
+    password: 'demo',
   });
 
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body.user, { name: 'Personal', role: 'orderer' });
+  assert.equal(response.body.user.name, 'Anders Hedberg');
+  assert.equal(response.body.user.role, 'member');
+  assert.equal(response.body.user.email, 'anders.hedberg@ambitionsverige.se');
+});
+
+test('POST /api/login accepts the admin demo account', async () => {
+  const app = freshApp();
+  const response = await request(app, 'POST', '/api/login', {
+    username: 'admd1cb8d',
+    password: 'ambitionadmin',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.user.name, 'Admin');
+  assert.equal(response.body.user.role, 'admin');
+  assert.equal(response.body.user.email, 'admin@ambitionsverige.se');
+});
+
+test('default demo users cover every department with at least one person', async () => {
+  const app = freshApp();
+  const response = await request(app, 'GET', '/api/users');
+
+  assert.equal(response.statusCode, 200);
+  for (const department of DEPARTMENTS) {
+    assert.equal(
+      response.body.users.some((user) => Array.isArray(user.groups) && user.groups.includes(department)),
+      true,
+      `missing demo user for ${department}`,
+    );
+  }
+});
+
+test('admin user API creates and assigns department users', async () => {
+  const app = freshApp();
+  const created = await request(app, 'POST', '/api/users', {
+    username: 'it',
+    password: 'secret',
+    name: 'IT-support',
+    role: 'member',
+    email: 'it@example.com',
+    group: 'IT-support / Mjukvara',
+  });
+
+  assert.equal(created.statusCode, 201);
+  assert.deepEqual(created.body.user, {
+    username: 'it',
+    name: 'IT-support',
+    role: 'member',
+    email: 'it@example.com',
+    group: 'IT-support / Mjukvara',
+    groups: ['IT-support / Mjukvara'],
+  });
+
+  const login = await request(app, 'POST', '/api/login', {
+    username: 'it',
+    password: 'secret',
+  });
+
+  assert.equal(login.statusCode, 200);
+  assert.equal(login.body.user.group, 'IT-support / Mjukvara');
+  assert.deepEqual(login.body.user.groups, ['IT-support / Mjukvara']);
+  assert.equal(login.body.settings.notifyGroupOrders, true);
+  assert.equal(login.body.settings.notifyGroupReviews, true);
+});
+
+test('admin user API creates users assigned to multiple departments', async () => {
+  const app = freshApp();
+  const created = await request(app, 'POST', '/api/users', {
+    username: 'multi',
+    password: 'secret',
+    name: 'Multiavdelning',
+    role: 'member',
+    email: 'multi@example.com',
+    groups: ['IT-support / Mjukvara', 'Hemsidan'],
+  });
+
+  assert.equal(created.statusCode, 201);
+  assert.equal(created.body.user.group, 'IT-support / Mjukvara');
+  assert.deepEqual(created.body.user.groups, ['IT-support / Mjukvara', 'Hemsidan']);
+
+  const login = await request(app, 'POST', '/api/login', {
+    username: 'multi',
+    password: 'secret',
+  });
+
+  assert.equal(login.statusCode, 200);
+  assert.deepEqual(login.body.user.groups, ['IT-support / Mjukvara', 'Hemsidan']);
+  assert.equal(login.body.settings.notifyGroupOrders, true);
+});
+
+test('admin user API edits users without requiring a password change', async () => {
+  const app = freshApp();
+  await request(app, 'POST', '/api/users', {
+    username: 'it',
+    password: 'secret',
+    name: 'IT-support',
+    role: 'member',
+    email: 'it@example.com',
+    group: 'IT-support / Mjukvara',
+  });
+
+  const updated = await request(app, 'PUT', '/api/users/it', {
+    username: 'it',
+    password: '',
+    name: 'IT-gruppen',
+    role: 'member',
+    email: 'it@example.com',
+    group: 'Hemsidan',
+  });
+
+  assert.equal(updated.statusCode, 200);
+  assert.equal(updated.body.user.name, 'IT-gruppen');
+  assert.equal(updated.body.user.group, 'Hemsidan');
+  assert.deepEqual(updated.body.user.groups, ['Hemsidan']);
+
+  const login = await request(app, 'POST', '/api/login', {
+    username: 'it',
+    password: 'secret',
+  });
+
+  assert.equal(login.statusCode, 200);
+  assert.equal(login.body.user.name, 'IT-gruppen');
+});
+
+test('admin user API prevents removing the final admin', async () => {
+  const app = freshApp();
+  const response = await request(app, 'DELETE', '/api/users/admin');
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, 'last_admin');
 });
 
 test('POST /api/login rejects invalid credentials', async () => {
@@ -205,7 +402,7 @@ test('POST /api/orders stores a new order and GET /api/orders returns it first',
   assert.equal(created.body.order.from, 'Personal');
   assert.equal(created.body.order.status, 'Ny');
   assert.equal(created.body.order.dept, 'Grafikgruppen');
-  assert.equal(created.body.order.deptEmail, 'grafikgruppen@example.com');
+  assert.equal(created.body.order.deptEmail, undefined);
   assert.ok(created.body.order.id);
 
   const listed = await request(app, 'GET', '/api/orders?dept=Grafikgruppen');
@@ -213,6 +410,27 @@ test('POST /api/orders stores a new order and GET /api/orders returns it first',
   assert.equal(listed.statusCode, 200);
   assert.equal(listed.body.orders[0].id, created.body.order.id);
   assert.equal(listed.body.orders[0].msg, 'Skapa en banner till kampanjen.');
+});
+
+test('POST /api/orders stores the sender username when the request is authenticated', async () => {
+  const app = freshApp();
+  const created = await request(app, 'POST', '/api/orders', {
+    from: 'Anders Jansson',
+    fromEmail: 'personal@example.com',
+    msg: 'Skapa en banner till kampanjen.',
+    deadline: '2026-06-01',
+    dept: 'Grafikgruppen',
+  }, {
+    'x-bportal-user-email': 'personal@example.com',
+  });
+
+  assert.equal(created.statusCode, 201);
+  assert.equal(created.body.order.fromUsername, 'user');
+
+  const listed = await request(app, 'GET', '/api/orders?fromUsername=user');
+
+  assert.equal(listed.statusCode, 200);
+  assert.equal(listed.body.orders[0].id, created.body.order.id);
 });
 
 test('POST /api/orders stores dates in yyyy-mm-dd format', async () => {
@@ -229,6 +447,116 @@ test('POST /api/orders stores dates in yyyy-mm-dd format', async () => {
   assert.equal(created.body.order.deadline, '2026-06-01');
 });
 
+test('POST /api/orders stores structured graphics order fields', async () => {
+  const app = freshApp();
+  const created = await request(app, 'POST', '/api/orders', {
+    from: 'Personal',
+    msg: [
+      'Rubrik: Kampanjbanner',
+      'Beställare: Personal',
+      'E-post: personal@example.com',
+      'Kanaler: Facebook, Instagram',
+    ].join('\n'),
+    deadline: '2026-06-01',
+    dept: 'Grafikgruppen',
+    graphicsRequest: {
+      title: 'Kampanjbanner',
+      customerName: 'Personal',
+      customerEmail: 'personal@example.com',
+      purpose: 'Skapa intresse för kampanjen.',
+      contentWishes: 'Tydlig avsändare och kort budskap.',
+      channels: ['Facebook', 'Instagram'],
+      extraMessage: 'Behöver vara klar före lunch.',
+    },
+  });
+
+  assert.equal(created.statusCode, 201);
+  assert.deepEqual(created.body.order.graphicsRequest, {
+    title: 'Kampanjbanner',
+    customerName: 'Personal',
+    customerEmail: 'personal@example.com',
+    purpose: 'Skapa intresse för kampanjen.',
+    contentWishes: 'Tydlig avsändare och kort budskap.',
+    channels: ['Facebook', 'Instagram'],
+    extraMessage: 'Behöver vara klar före lunch.',
+  });
+});
+
+test('POST /api/orders stores structured zoom meeting fields', async () => {
+  const app = freshApp();
+  const created = await request(app, 'POST', '/api/orders', {
+    from: 'Personal',
+    msg: 'Jag vill boka ett zoom-möte.',
+    deadline: '2026-06-02',
+    dept: 'Boka zoom-möte',
+    zoomMeetingRequest: {
+      date: '2026-06-02',
+      time: '10:00',
+      notes: 'Behöver en länk till mötet.',
+    },
+  });
+
+  assert.equal(created.statusCode, 201);
+  assert.deepEqual(created.body.order.zoomMeetingRequest, {
+    date: '2026-06-02',
+    time: '10:00',
+    notes: 'Behöver en länk till mötet.',
+  });
+});
+
+test('POST and GET /api/orders/:id/chat are limited to the order owner and department members', async () => {
+  const app = freshApp();
+  const created = await request(app, 'POST', '/api/orders', {
+    from: 'Anders Jansson',
+    fromEmail: 'personal@example.com',
+    msg: 'Skapa en banner till kampanjen.',
+    deadline: '2026-06-01',
+    dept: 'Grafikgruppen',
+  });
+
+  const ownerRead = await request(app, 'GET', `/api/orders/${created.body.order.id}/chat`, undefined, {
+    'x-bportal-user-email': 'personal@example.com',
+  });
+  assert.equal(ownerRead.statusCode, 200);
+  assert.deepEqual(ownerRead.body.chat, []);
+
+  const ownerWrite = await request(app, 'POST', `/api/orders/${created.body.order.id}/chat`, {
+    message: 'Hej, jag vill gärna följa upp beställningen.',
+  }, {
+    'x-bportal-user-email': 'personal@example.com',
+  });
+  assert.equal(ownerWrite.statusCode, 201);
+  assert.equal(ownerWrite.body.message.text, 'Hej, jag vill gärna följa upp beställningen.');
+
+  const memberRead = await request(app, 'GET', `/api/orders/${created.body.order.id}/chat`, undefined, {
+    'x-bportal-user-email': 'grafikgruppen@example.com',
+  });
+  assert.equal(memberRead.statusCode, 200);
+  assert.equal(memberRead.body.chat.length, 1);
+
+  const memberWrite = await request(app, 'POST', `/api/orders/${created.body.order.id}/chat`, {
+    message: 'Vi har tagit hand om den.',
+  }, {
+    'x-bportal-user-email': 'grafikgruppen@example.com',
+  });
+  assert.equal(memberWrite.statusCode, 201);
+  assert.equal(memberWrite.body.message.text, 'Vi har tagit hand om den.');
+
+  const forbiddenRead = await request(app, 'GET', `/api/orders/${created.body.order.id}/chat`, undefined, {
+    'x-bportal-user-email': 'lena.karlsson@example.com',
+  });
+  assert.equal(forbiddenRead.statusCode, 403);
+  assert.equal(forbiddenRead.body.error, 'chat_forbidden');
+
+  const forbiddenWrite = await request(app, 'POST', `/api/orders/${created.body.order.id}/chat`, {
+    message: 'Jag borde inte komma åt detta.',
+  }, {
+    'x-bportal-user-email': 'lena.karlsson@example.com',
+  });
+  assert.equal(forbiddenWrite.statusCode, 403);
+  assert.equal(forbiddenWrite.body.error, 'chat_forbidden');
+});
+
 test('POST /api/orders rejects deadlines outside yyyy-mm-dd format', async () => {
   const app = freshApp();
   const response = await request(app, 'POST', '/api/orders', {
@@ -243,22 +571,40 @@ test('POST /api/orders rejects deadlines outside yyyy-mm-dd format', async () =>
   assert.deepEqual(response.body.details, ['deadline_invalid']);
 });
 
-test('GET /api/orders can filter orders by sender', async () => {
+test('GET /api/orders can filter orders by sender username', async () => {
   const app = freshApp();
   const personal = await request(app, 'POST', '/api/orders', {
     from: 'Personal',
+    fromUsername: 'personal-user',
+    msg: 'Min skickade beställning.',
+    deadline: '',
+    dept: 'IT-support / Mjukvara',
+  });
+
+  const listed = await request(app, 'GET', '/api/orders?fromUsername=personal-user');
+
+  assert.equal(listed.statusCode, 200);
+  assert.deepEqual(listed.body.orders.map((order) => order.id), [personal.body.order.id]);
+});
+
+test('GET /api/orders only returns orders for the matching sender username', async () => {
+  const app = freshApp();
+  const personal = await request(app, 'POST', '/api/orders', {
+    from: 'Personal',
+    fromUsername: 'personal-user',
     msg: 'Min skickade beställning.',
     deadline: '',
     dept: 'IT-support / Mjukvara',
   });
   await request(app, 'POST', '/api/orders', {
     from: 'Annan användare',
+    fromUsername: 'someone-else',
     msg: 'Ska inte synas för Personal.',
     deadline: '',
     dept: 'IT-support / Mjukvara',
   });
 
-  const listed = await request(app, 'GET', '/api/orders?from=Personal');
+  const listed = await request(app, 'GET', '/api/orders?fromUsername=personal-user');
 
   assert.equal(listed.statusCode, 200);
   assert.deepEqual(listed.body.orders.map((order) => order.id), [personal.body.order.id]);
@@ -555,6 +901,53 @@ test('POST /api/ai/suggest streams chunks and keeps Ollama loaded indefinitely',
   assert.equal(lines.at(-1).fullResponse, 'Tänker Hej du!');
 });
 
+test('POST /api/ai/suggest stream infers a clear graphics suggestion if command is missing', async () => {
+  const encoder = new TextEncoder();
+  const chunks = [
+    encoder.encode('{"message":{"content":"Det låter som en Grafikgruppen-ärende."}}\n'),
+    encoder.encode('{"done":true}\n'),
+  ];
+  let chunkIndex = 0;
+
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async () => ({
+      ok: true,
+      body: {
+        getReader() {
+          return {
+            async read() {
+              if (chunkIndex < chunks.length) {
+                return { value: chunks[chunkIndex++], done: false };
+              }
+
+              return { done: true };
+            },
+          };
+        },
+      },
+    }),
+  });
+
+  const response = await aiApp.inject({
+    method: 'POST',
+    path: '/api/ai/suggest',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      message: 'Jag behöver en bild till en kampanj.',
+      stream: true,
+    }),
+  });
+
+  assert.equal(response.statusCode, 200);
+  const lines = response.body.trim().split('\n').map((line) => JSON.parse(line));
+  const final = lines.at(-1);
+  assert.equal(final.type, 'final');
+  assert.equal(final.suggestion.department, 'Grafikgruppen');
+  assert.equal(final.suggestion.source, 'server_fallback');
+  assert.equal(final.reply, 'Det låter som en Grafikgruppen-ärende.');
+});
+
 test('warmOllamaModel sends a preload prompt that keeps the configured model loaded', async () => {
   let capturedUrl = null;
   let capturedBody = null;
@@ -654,8 +1047,9 @@ test('POST /api/ai/suggest uses a concise routing prompt with recommendation com
   assert.match(capturedBody.messages[0].content, /routingassistent/i);
   assert.match(capturedBody.messages[0].content, /så snabbt som möjligt rekommendera/i);
   assert.match(capturedBody.messages[0].content, /huvudmål/i);
-  assert.match(capturedBody.messages[0].content, /Tillgängliga avdelningar:/);
-  assert.match(capturedBody.messages[0].content, /- Grafikgruppen/);
+  assert.match(capturedBody.messages[0].content, /Tillgängliga avdelningar och vad de behandlar just nu:/);
+  assert.match(capturedBody.messages[0].content, /- Grafikgruppen: Grafik, bilder, design/);
+  assert.match(capturedBody.messages[0].content, /Använd beskrivningarna ovan som primär källa/);
   assert.match(capturedBody.messages[0].content, /exakt i listan/);
   assert.match(capturedBody.messages[0].content, /alltid skriva minst en kort vanlig mening/);
   assert.match(capturedBody.messages[0].content, /Svara aldrig med enbart kommandoraden/);
@@ -691,8 +1085,14 @@ test('POST /api/ai/suggest includes the currently configured department list in 
   let capturedBody = null;
   const state = createDefaultState();
   state.departments = [
-    { name: 'Specialteamet', email: 'special@example.com' },
-    { name: 'Medlemsfrågor', email: 'medlem@example.com' },
+    {
+      name: 'Specialteamet',
+      description: 'Specialärenden, svåra interna frågor och extra prioriterade beställningar.',
+    },
+    {
+      name: 'Medlemsfrågor',
+      description: 'Frågor från medlemmar, medlemsservice och stöd till medlemmar.',
+    },
   ];
 
   const aiApp = createApp({
@@ -717,10 +1117,10 @@ test('POST /api/ai/suggest includes the currently configured department list in 
   const systemPrompt = capturedBody.messages[0].content;
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.suggestion.department, 'Specialteamet');
-  assert.match(systemPrompt, /Tillgängliga avdelningar:/);
-  assert.match(systemPrompt, /- Specialteamet/);
-  assert.match(systemPrompt, /- Medlemsfrågor/);
-  assert.match(systemPrompt, /- Grafikgruppen/);
+  assert.match(systemPrompt, /Tillgängliga avdelningar och vad de behandlar just nu:/);
+  assert.match(systemPrompt, /- Specialteamet: Specialärenden, svåra interna frågor och extra prioriterade beställningar\./);
+  assert.match(systemPrompt, /- Medlemsfrågor: Frågor från medlemmar, medlemsservice och stöd till medlemmar\./);
+  assert.match(systemPrompt, /- Grafikgruppen: Grafik, bilder, design, affischer, banners, layout, logotyper och visuellt material\./);
 });
 
 test('POST /api/ai/suggest can return a friendly reply without a department', async () => {
@@ -798,7 +1198,7 @@ test('POST /api/ai/suggest does not recommend a department for a greeting', asyn
   assert.equal(response.body.reply, 'Hej! Vad gäller ditt ärende?');
 });
 
-test('POST /api/ai/suggest does not infer a department from plain text alone', async () => {
+test('POST /api/ai/suggest infers a clear graphics suggestion if Ollama omits the command', async () => {
   const aiApp = createApp({
     state: createDefaultState(),
     ollamaFetch: async () => ({
@@ -816,8 +1216,33 @@ test('POST /api/ai/suggest does not infer a department from plain text alone', a
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.suggestion, null);
+  assert.equal(response.body.suggestion.department, 'Grafikgruppen');
+  assert.equal(response.body.suggestion.source, 'server_fallback');
+  assert.equal(response.body.suggestion.inferred, true);
   assert.equal(response.body.reply, 'Det här hör till Grafikgruppen, men jag skriver ingen kommando-rad.');
+});
+
+test('POST /api/ai/suggest infers an explicit department recommendation from plain AI text', async () => {
+  const aiApp = createApp({
+    state: createDefaultState(),
+    ollamaFetch: async () => ({
+      ok: true,
+      json: async () => ({
+        message: {
+          content: 'Det låter som en Grafikgruppen-ärende.',
+        },
+      }),
+    }),
+  });
+
+  const response = await request(aiApp, 'POST', '/api/ai/suggest', {
+    message: 'Jag behöver en bild till en kampanj.',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.suggestion.department, 'Grafikgruppen');
+  assert.equal(response.body.suggestion.source, 'server_fallback');
+  assert.equal(response.body.reply, 'Det låter som en Grafikgruppen-ärende.');
 });
 
 test('POST /api/ai/suggest extracts a department command from free-form chat', async () => {

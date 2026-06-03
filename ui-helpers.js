@@ -37,8 +37,8 @@
         if (source === 'ai') {
             return {
                 icon: 'fa-arrow-left',
-                label: 'Tillbaka till chatten',
-                targetPage: 'choose-path-page',
+                label: 'Tillbaka till avdelningar',
+                targetPage: 'select-department',
             };
         }
 
@@ -57,15 +57,68 @@
         };
     }
 
+    function getUserGroups(user) {
+        const values = [
+            ...(Array.isArray(user && user.groups) ? user.groups : []),
+            user && user.group,
+        ];
+
+        return values
+            .map((group) => String(group || '').trim())
+            .filter(Boolean)
+            .filter((group, index, groups) => groups.indexOf(group) === index);
+    }
+
     function shouldShowProposalUploadButton(order, currentUser) {
         if (!order || !currentUser) return false;
-        if (currentUser.role !== 'graphics') return false;
+        
+        // Allow if user is a member OR if user belongs to the order's department
+        const isMember = currentUser.role === 'member';
+        const belongsToDept = (currentUser.groups && currentUser.groups.includes(order.dept)) || currentUser.group === order.dept;
+        
+        if (!isMember && !belongsToDept) return false;
+        
         return order.status !== 'Avklarad';
     }
 
+    function canAccessOrderChat(order, currentUser) {
+        if (!order || !currentUser) return false;
+        if (currentUser.role === 'admin') return true;
+
+        const orderEmail = String(order.fromEmail || order.graphicsRequest && order.graphicsRequest.customerEmail || '').trim().toLowerCase();
+        const currentEmail = String(currentUser.email || '').trim().toLowerCase();
+        if (orderEmail && currentEmail && orderEmail === currentEmail) return true;
+
+        const currentGroups = getUserGroups(currentUser);
+        if (currentGroups.includes(order.dept)) return true;
+
+        const ordererName = String(order.from || '').trim().toLowerCase();
+        const currentName = String(currentUser.name || '').trim().toLowerCase();
+        return Boolean(ordererName && currentName && ordererName === currentName);
+    }
+
+    function shouldShowSentOrdersButton(currentUser, sentOrders) {
+        if (!currentUser || !Array.isArray(sentOrders)) return false;
+
+        const currentUsername = String(currentUser.username || '').trim().toLowerCase();
+
+        return sentOrders.some((order) => {
+            const orderUsername = String(order && order.fromUsername || '').trim().toLowerCase();
+            return Boolean(currentUsername && orderUsername && currentUsername === orderUsername);
+        });
+    }
+
+    function shouldShowIncomingOrdersButton(currentUser, incomingOrders) {
+        if (!currentUser || !Array.isArray(incomingOrders)) return false;
+        return incomingOrders.length > 0;
+    }
+
     const api = {
+        canAccessOrderChat,
         getDefaultOrderDeadline,
         getOrderFormBackConfig,
+        shouldShowIncomingOrdersButton,
+        shouldShowSentOrdersButton,
         shouldShowProposalUploadButton,
         suggestDepartmentFromMessage,
     };
