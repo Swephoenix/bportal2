@@ -1,6 +1,17 @@
 #!/bin/bash
 ROOT_DIR="$(dirname "$0")"
 cd "$ROOT_DIR"
+
+if [ ! -d "node_modules" ]; then
+  echo "Installing frontend dependencies..."
+  npm install
+fi
+
+if [ ! -d "backend/node_modules" ]; then
+  echo "Installing backend dependencies..."
+  npm install --prefix backend
+fi
+
 echo "Building Tailwind CSS..."
 npm run build:tailwind
 
