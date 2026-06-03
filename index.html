@@ -1593,7 +1593,7 @@
             </button>
         </div>
         <div class="grid gap-6">
-            <div class="hidden overflow-hidden rounded-xl border border-gray-200 bg-white shadow md:block">
+            <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow">
                 <table class="responsive-table min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                         <tr>
@@ -1607,7 +1607,7 @@
                     <tbody id="admin-users-tbody" class="divide-y divide-gray-200 bg-white"></tbody>
                 </table>
             </div>
-            <div id="admin-users-mobile" class="space-y-3 md:hidden"></div>
+            <div id="admin-users-mobile" class="hidden"></div>
         </div>
     </section>
 
@@ -1998,6 +1998,38 @@
                     label: 'Avbryt och gå till start',
                     targetPage: 'dashboard',
                 };
+            },
+            async loadAdminUsersSequence(actions) {
+                const {
+                    showPage,
+                    resetExpanded,
+                    loadDepartments,
+                    populateGroupSelect,
+                    cancelEdit,
+                    loadUsers,
+                    renderUsers,
+                    onError,
+                } = actions || {};
+
+                if (typeof showPage === 'function') showPage('admin-users');
+                if (typeof resetExpanded === 'function') resetExpanded();
+
+                try {
+                    if (typeof loadDepartments === 'function') await loadDepartments();
+                } catch (error) {
+                    if (typeof onError === 'function') onError(error, 'departments');
+                }
+
+                if (typeof populateGroupSelect === 'function') populateGroupSelect();
+                if (typeof cancelEdit === 'function') cancelEdit();
+
+                try {
+                    if (typeof loadUsers === 'function') await loadUsers();
+                } catch (error) {
+                    if (typeof onError === 'function') onError(error, 'users');
+                }
+
+                if (typeof renderUsers === 'function') renderUsers();
             }
         };
 
@@ -3933,7 +3965,7 @@
                     currentUser = { username: 'user2', name: 'Anna Olsson', role: 'graphics', email: 'grafikgruppen@example.com', group: 'Grafikgruppen', groups: ['Grafikgruppen'] };
                 } else if (user === 'zoom' && pass === 'demo') {
                     currentUser = { username: 'zoom', name: 'Zoomansvarig', role: 'member', email: 'zoom@example.com', group: 'Boka zoom-möte', groups: ['Boka zoom-möte'] };
-                } else if (user === 'admin' && pass === 'ambitionadmin') {
+                } else if (user === 'admin' && pass === 'adminadmin') {
                     currentUser = { username: 'admin', name: 'Andreas', role: 'admin', email: 'admin@example.com' };
                 } else {
                     alert("Fel inloggning!");
@@ -4064,19 +4096,23 @@
                 return;
             }
 
-            showPage('admin-users');
-            adminUsersExpanded = new Set();
-            await loadDepartments();
-            populateAdminGroupSelect();
-            cancelAdminUserEdit();
-
-            try {
-                await loadAdminUserData();
-            } catch (error) {
-                alert('Användarna kunde inte laddas.');
-                adminUsers = [];
-            }
-            renderAdminUsers();
+            await BportalUI.loadAdminUsersSequence({
+                showPage,
+                resetExpanded() {
+                    adminUsersExpanded = new Set();
+                },
+                loadDepartments,
+                populateGroupSelect: populateAdminGroupSelect,
+                cancelEdit: cancelAdminUserEdit,
+                loadUsers: loadAdminUserData,
+                renderUsers: renderAdminUsers,
+                onError(error, phase) {
+                    if (phase === 'users') {
+                        alert('Användarna kunde inte laddas.');
+                        adminUsers = [];
+                    }
+                }
+            });
         }
 
         async function loadAdminUserData() {

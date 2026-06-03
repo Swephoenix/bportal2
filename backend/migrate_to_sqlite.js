@@ -8,7 +8,7 @@ db.exec(schema);
 
 const DEFAULT_USERS = [
   { username: 'user', password: 'user', user: { name: 'Anders Jansson', role: 'member', email: 'personal@example.com' } },
-  { username: 'admin', password: 'ambitionadmin', user: { name: 'Andreas', role: 'admin', email: 'admin@example.com' } },
+  { username: 'admin', password: 'adminadmin', user: { name: 'Andreas', role: 'admin', email: 'admin@example.com' } },
 ];
 
 const insertUser = db.prepare('INSERT OR IGNORE INTO users (username, password_hash, name, role, email) VALUES (?, ?, ?, ?, ?)');

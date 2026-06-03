@@ -113,10 +113,44 @@
         return incomingOrders.length > 0;
     }
 
+    async function loadAdminUsersSequence(actions) {
+        const {
+            showPage,
+            resetExpanded,
+            loadDepartments,
+            populateGroupSelect,
+            cancelEdit,
+            loadUsers,
+            renderUsers,
+            onError,
+        } = actions || {};
+
+        if (typeof showPage === 'function') showPage('admin-users');
+        if (typeof resetExpanded === 'function') resetExpanded();
+
+        try {
+            if (typeof loadDepartments === 'function') await loadDepartments();
+        } catch (error) {
+            if (typeof onError === 'function') onError(error, 'departments');
+        }
+
+        if (typeof populateGroupSelect === 'function') populateGroupSelect();
+        if (typeof cancelEdit === 'function') cancelEdit();
+
+        try {
+            if (typeof loadUsers === 'function') await loadUsers();
+        } catch (error) {
+            if (typeof onError === 'function') onError(error, 'users');
+        }
+
+        if (typeof renderUsers === 'function') renderUsers();
+    }
+
     const api = {
         canAccessOrderChat,
         getDefaultOrderDeadline,
         getOrderFormBackConfig,
+        loadAdminUsersSequence,
         shouldShowIncomingOrdersButton,
         shouldShowSentOrdersButton,
         shouldShowProposalUploadButton,

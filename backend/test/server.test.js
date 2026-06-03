@@ -241,27 +241,27 @@ test('PUT /api/departments requires admin user', async () => {
 test('POST /api/login accepts a demo member account', async () => {
   const app = freshApp();
   const response = await request(app, 'POST', '/api/login', {
-    username: 'anda99b6c',
-    password: 'demo',
+    username: 'user',
+    password: 'user',
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.user.name, 'Anders Hedberg');
+  assert.equal(response.body.user.name, 'Anders Jansson');
   assert.equal(response.body.user.role, 'member');
-  assert.equal(response.body.user.email, 'anders.hedberg@ambitionsverige.se');
+  assert.equal(response.body.user.email, 'personal@example.com');
 });
 
-test('POST /api/login accepts the admin demo account', async () => {
+test('POST /api/login accepts the admin demo account with password adminadmin', async () => {
   const app = freshApp();
   const response = await request(app, 'POST', '/api/login', {
-    username: 'admd1cb8d',
-    password: 'ambitionadmin',
+    username: 'admin',
+    password: 'adminadmin',
   });
 
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.user.name, 'Admin');
+  assert.equal(response.body.user.name, 'Andreas');
   assert.equal(response.body.user.role, 'admin');
-  assert.equal(response.body.user.email, 'admin@ambitionsverige.se');
+  assert.equal(response.body.user.email, 'admin@example.com');
 });
 
 test('default demo users cover every department with at least one person', async () => {
@@ -334,6 +334,40 @@ test('admin user API creates users assigned to multiple departments', async () =
   assert.equal(login.statusCode, 200);
   assert.deepEqual(login.body.user.groups, ['IT-support / Mjukvara', 'Hemsidan']);
   assert.equal(login.body.settings.notifyGroupOrders, true);
+});
+
+test('GET /api/users lists users persisted in sqlite even when they are not in state', async () => {
+  const app = freshApp();
+  const username = `dbonly_${process.pid}_${Date.now()}`;
+  const email = `${username}@example.com`;
+
+  try {
+    await request(app, 'POST', '/api/users', {
+      username,
+      password: 'secret',
+      name: 'Databasanvändare',
+      role: 'member',
+      email,
+      groups: ['Hemsidan'],
+    });
+
+    const reloadedApp = freshApp();
+    const response = await request(reloadedApp, 'GET', '/api/users');
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(
+      response.body.users.some((user) => (
+        user.username === username
+        && user.name === 'Databasanvändare'
+        && user.email === email
+        && Array.isArray(user.groups)
+        && user.groups.includes('Hemsidan')
+      )),
+      true,
+    );
+  } finally {
+    await request(freshApp(), 'DELETE', `/api/users/${encodeURIComponent(username)}`);
+  }
 });
 
 test('admin user API edits users without requiring a password change', async () => {

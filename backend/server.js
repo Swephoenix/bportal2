@@ -123,8 +123,27 @@ const DEFAULT_USERS = [
   { username: 'niklas', password: 'demo', user: { name: 'Niklas Åberg', role: 'member', email: 'niklas.aberg@example.com', group: 'Hemsidan', groups: ['Hemsidan'] } },
   { username: 'camilla', password: 'demo', user: { name: 'Camilla Larsson', role: 'member', email: 'camilla.larsson@example.com', group: 'Marknad', groups: ['Marknad'] } },
   { username: 'fredrik', password: 'demo', user: { name: 'Fredrik Sandberg', role: 'member', email: 'fredrik.sandberg@example.com', group: 'HR / Personalfrågor', groups: ['HR / Personalfrågor'] } },
-  { username: 'admin', password: 'ambitionadmin', user: { name: 'Andreas', role: 'admin', email: 'admin@example.com' } },
+  { username: 'admin', password: 'adminadmin', user: { name: 'Andreas', role: 'admin', email: 'admin@example.com' } },
 ];
+
+const schemaPath = path.join(__dirname, 'schema.sql');
+if (fs.existsSync(schemaPath)) {
+  db.exec(fs.readFileSync(schemaPath, 'utf8'));
+}
+
+const insertDefaultUser = db.prepare(
+  'INSERT OR IGNORE INTO users (username, password_hash, name, role, email) VALUES (?, ?, ?, ?, ?)'
+);
+const insertDefaultUserGroup = db.prepare(
+  'INSERT OR IGNORE INTO user_groups (username, group_name) VALUES (?, ?)'
+);
+for (const entry of DEFAULT_USERS) {
+  const hash = bcrypt.hashSync(entry.password, 10);
+  insertDefaultUser.run(entry.username, hash, entry.user.name, entry.user.role, entry.user.email);
+  normalizeUserGroups(entry.user).forEach((group) => {
+    insertDefaultUserGroup.run(entry.username, group);
+  });
+}
 
 const DEMO_ORDERS = [
   { from: 'Erik (Kommunikation)', msg: 'Design av ny flyer för sommarkampanjen.', deadline: '2024-06-15', dept: 'Grafikgruppen', status: 'Väntar' },
@@ -270,6 +289,55 @@ function publicUserEntry(entry) {
   };
 }
 
+function userGroupsFromDb(username) {
+  return db.prepare(
+    'SELECT group_name FROM user_groups WHERE username = ? ORDER BY rowid'
+  ).all(username).map((row) => row.group_name);
+}
+
+function userEntryFromDbRow(row, state = null) {
+  if (!row) return null;
+  const stateEntry = state
+    ? normalizeUsers(state.users).find((entry) => entry.username === row.username)
+    : null;
+  const dbGroups = userGroupsFromDb(row.username);
+  const groups = dbGroups.length
+    ? dbGroups
+    : normalizeUserGroups(stateEntry && stateEntry.user);
+
+  return {
+    username: row.username,
+    password: stateEntry ? stateEntry.password : '',
+    user: {
+      name: row.name,
+      role: normalizeRole(row.role),
+      email: row.email,
+      ...(groups.length ? { group: groups[0], groups } : {}),
+    },
+  };
+}
+
+function listUserEntriesFromDb(state = null) {
+  const rows = db.prepare(
+    'SELECT username, name, role, email FROM users ORDER BY username'
+  ).all();
+  return rows.map((row) => userEntryFromDbRow(row, state)).filter(Boolean);
+}
+
+function findUserEntryInDbByUsername(username, state = null) {
+  const row = db.prepare(
+    'SELECT username, name, role, email FROM users WHERE username = ?'
+  ).get(username);
+  return userEntryFromDbRow(row, state);
+}
+
+function findUserEntryInDbByEmail(email, state = null) {
+  const row = db.prepare(
+    'SELECT username, name, role, email FROM users WHERE lower(email) = lower(?)'
+  ).get(userSettingsKey(email));
+  return userEntryFromDbRow(row, state);
+}
+
 function payloadGroups(payload) {
   return [
     ...(Array.isArray(payload && payload.groups) ? payload.groups : []),
@@ -323,13 +391,22 @@ function safeUserEntry(payload, state, existingEntry = null) {
 
 function upsertUserInDb(username, password, user = {}) {
   const hash = bcrypt.hashSync(password, 10);
-  db.prepare(
-    'INSERT OR REPLACE INTO users (username, password_hash, name, role, email) VALUES (?, ?, ?, ?, ?)'
-  ).run(username, hash, user.name || '', user.role || 'member', user.email || '');
+  const groups = normalizeUserGroups(user);
+  const saveUser = db.transaction(() => {
+    db.prepare(
+      'INSERT OR REPLACE INTO users (username, password_hash, name, role, email) VALUES (?, ?, ?, ?, ?)'
+    ).run(username, hash, user.name || '', user.role || 'member', user.email || '');
+    db.prepare('DELETE FROM user_groups WHERE username = ?').run(username);
+    groups.forEach((group) => {
+      db.prepare('INSERT INTO user_groups (username, group_name) VALUES (?, ?)').run(username, group);
+    });
+  });
+  saveUser();
   return hash;
 }
 
 function deleteUserFromDb(username) {
+  db.prepare('DELETE FROM user_groups WHERE username = ?').run(username);
   db.prepare('DELETE FROM users WHERE username = ?').run(username);
 }
 
@@ -382,6 +459,8 @@ function setUserSettings(state, user, settings) {
 }
 
 function findUserByEmail(state, email) {
+  const entry = findUserEntryInDbByEmail(email, state);
+  if (entry) return entry.user;
   const key = userSettingsKey(email);
   return normalizeUsers(state.users).map((entry) => entry.user).find((user) => userSettingsKey(user.email) === key) || null;
 }
@@ -594,6 +673,8 @@ function safeZoomMeetingRequest(payload) {
 }
 
 function findUserEntryByEmail(state, email) {
+  const entry = findUserEntryInDbByEmail(email, state);
+  if (entry) return entry;
   const key = userSettingsKey(email);
   return normalizeUsers(state.users).find((entry) => userSettingsKey(entry.user.email) === key) || null;
 }
@@ -1555,8 +1636,8 @@ function createApp(options = {}) {
           return json(401, { error: 'invalid_credentials' });
       }
       
-      // Reconstruct user object to match expected format
-      const stateUser = normalizeUsers(state.users).find((u) => u.username === userEntry.username);
+      const stateUser = findUserEntryInDbByUsername(userEntry.username, state)
+        || normalizeUsers(state.users).find((u) => u.username === userEntry.username);
       const user = {
           username: userEntry.username,
           name: userEntry.name,
@@ -1572,7 +1653,7 @@ function createApp(options = {}) {
 
     if (method === 'GET' && url.pathname === '/api/users') {
       return json(200, {
-        users: normalizeUsers(state.users).map(publicUserEntry),
+        users: listUserEntriesFromDb(state).map(publicUserEntry),
       });
     }
 
@@ -1600,7 +1681,7 @@ function createApp(options = {}) {
       if (!isAdminRequest(state, headers)) return json(403, { error: 'admin_required' });
 
       const username = decodeURIComponent(userActionMatch[1]);
-      const users = normalizeUsers(state.users);
+      const users = listUserEntriesFromDb(state);
       const index = users.findIndex((entry) => entry.username === username);
       if (index === -1) return json(404, { error: 'user_not_found' });
 
@@ -1747,8 +1828,8 @@ function createApp(options = {}) {
         const adminEmail = headers['x-bportal-user-email'] || headers['X-Bportal-User-Email'];
         console.log(`[AUDIT] User ${adminEmail} started impersonating user ${user.username}`);
         
-        // Re-fetch the latest user data from the normalized state
-        const currentUsers = normalizeUsers(state.users);
+        // Re-fetch the latest user data from the database-backed user list.
+        const currentUsers = listUserEntriesFromDb(state);
         const latestUserEntry = currentUsers.find(u => u.username === user.username);
         const userData = latestUserEntry ? latestUserEntry.user : user;
 
@@ -1768,7 +1849,7 @@ function createApp(options = {}) {
     const userMatch = url.pathname.match(/^\/api\/users\/([^/]+)$/);
     if (method === 'PUT' && userMatch) {
       const username = decodeURIComponent(userMatch[1]);
-      const users = normalizeUsers(state.users);
+      const users = listUserEntriesFromDb(state);
       const index = users.findIndex((entry) => entry.username === username);
       if (index === -1) return json(404, { error: 'user_not_found' });
 
@@ -1791,7 +1872,7 @@ function createApp(options = {}) {
 
     if (method === 'DELETE' && userMatch) {
       const username = decodeURIComponent(userMatch[1]);
-      const users = normalizeUsers(state.users);
+      const users = listUserEntriesFromDb(state);
       const index = users.findIndex((entry) => entry.username === username);
       if (index === -1) return json(404, { error: 'user_not_found' });
       if (users[index].user.role === 'admin' && users.filter((entry) => entry.user.role === 'admin').length === 1) {

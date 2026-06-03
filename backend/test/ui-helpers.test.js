@@ -4,6 +4,7 @@ const { test } = require('node:test');
 const {
   getDefaultOrderDeadline,
   getOrderFormBackConfig,
+  loadAdminUsersSequence,
   canAccessOrderChat,
   shouldShowIncomingOrdersButton,
   shouldShowSentOrdersButton,
@@ -96,4 +97,47 @@ test('getOrderFormBackConfig returns department selection for AI suggested order
     label: 'Tillbaka till avdelningar',
     targetPage: 'select-department',
   });
+});
+
+test('loadAdminUsersSequence still renders users when departments fail to load', async () => {
+  const calls = [];
+
+  await loadAdminUsersSequence({
+    showPage(page) {
+      calls.push(`show:${page}`);
+    },
+    resetExpanded() {
+      calls.push('reset');
+    },
+    async loadDepartments() {
+      calls.push('departments');
+      throw new Error('departments offline');
+    },
+    populateGroupSelect() {
+      calls.push('groups');
+    },
+    cancelEdit() {
+      calls.push('cancel');
+    },
+    async loadUsers() {
+      calls.push('users');
+    },
+    renderUsers() {
+      calls.push('render');
+    },
+    onError(error, phase) {
+      calls.push(`error:${phase}:${error.message}`);
+    },
+  });
+
+  assert.deepEqual(calls, [
+    'show:admin-users',
+    'reset',
+    'departments',
+    'error:departments:departments offline',
+    'groups',
+    'cancel',
+    'users',
+    'render',
+  ]);
 });
