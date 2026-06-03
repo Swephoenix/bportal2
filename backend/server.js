@@ -7,7 +7,9 @@ const crypto = require('node:crypto');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 
-const db = new Database(path.join(__dirname, 'data', 'bportal.db'));
+const DB_DIR = path.join(__dirname, 'data');
+fs.mkdirSync(DB_DIR, { recursive: true });
+const db = new Database(path.join(DB_DIR, 'bportal.db'));
 
 const envPath = path.join(__dirname, '.env');
 if (fs.existsSync(envPath)) {
@@ -39,6 +41,14 @@ const OLLAMA_KEEP_ALIVE = process.env.OLLAMA_KEEP_ALIVE || '-1';
 const OLLAMA_WARMUP = process.env.OLLAMA_WARMUP === '1';
 const OLLAMA_WARMUP_INTERVAL_MS = Number(process.env.OLLAMA_WARMUP_INTERVAL_MS || 30 * 60 * 1000);
 const OLLAMA_WARMUP_PROMPT = process.env.OLLAMA_WARMUP_PROMPT || 'Svara endast med OK.';
+const AMBCENTRAL_API_URL = String(process.env.AMBCENTRAL_API_URL || '').replace(/\/+$/, '');
+const ENV_BPORTAL_ADMIN_EMAILS = new Set(
+  String(process.env.BPORTAL_ADMIN_EMAILS || '')
+    .split(',')
+    .map((email) => String(email || '').trim().toLowerCase())
+    .filter(Boolean),
+);
+const PUBLIC_API_BASE_URL = String(process.env.BPORTAL_API_BASE_URL || '').replace(/\/+$/, '');
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
 
@@ -206,10 +216,36 @@ function normalizeRole(role) {
   return 'member';
 }
 
+function normalizeAdminEmailSet(value) {
+  if (value instanceof Set) return new Set([...value].map((email) => String(email || '').trim().toLowerCase()).filter(Boolean));
+  if (Array.isArray(value)) {
+    return new Set(value.map((email) => String(email || '').trim().toLowerCase()).filter(Boolean));
+  }
+  return new Set(
+    String(value || '')
+      .split(',')
+      .map((email) => String(email || '').trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+function isBportalAdminEmail(email, adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
+  const key = userSettingsKey(email);
+  if (!key) return false;
+  return adminEmails.has(key);
+}
+
+function normalizeAmbCentralRole(role, email = '', adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
+  const r = String(role || '').trim().toLowerCase();
+  if (isBportalAdminEmail(email, adminEmails) || r === 'globaladmin') return 'admin';
+  return 'member';
+}
+
 function normalizeUserGroups(user = {}) {
+  const source = user && typeof user === 'object' ? user : {};
   const values = [
-    ...(Array.isArray(user.groups) ? user.groups : []),
-    user.group,
+    ...(Array.isArray(source.groups) ? source.groups : []),
+    source.group,
   ];
   const groups = [];
   const seen = new Set();
@@ -295,7 +331,7 @@ function userGroupsFromDb(username) {
   ).all(username).map((row) => row.group_name);
 }
 
-function userEntryFromDbRow(row, state = null) {
+function userEntryFromDbRow(row, state = null, adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
   if (!row) return null;
   const stateEntry = state
     ? normalizeUsers(state.users).find((entry) => entry.username === row.username)
@@ -310,32 +346,32 @@ function userEntryFromDbRow(row, state = null) {
     password: stateEntry ? stateEntry.password : '',
     user: {
       name: row.name,
-      role: normalizeRole(row.role),
+      role: isBportalAdminEmail(row.email, adminEmails) ? 'admin' : normalizeRole(row.role),
       email: row.email,
       ...(groups.length ? { group: groups[0], groups } : {}),
     },
   };
 }
 
-function listUserEntriesFromDb(state = null) {
+function listUserEntriesFromDb(state = null, adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
   const rows = db.prepare(
     'SELECT username, name, role, email FROM users ORDER BY username'
   ).all();
-  return rows.map((row) => userEntryFromDbRow(row, state)).filter(Boolean);
+  return rows.map((row) => userEntryFromDbRow(row, state, adminEmails)).filter(Boolean);
 }
 
-function findUserEntryInDbByUsername(username, state = null) {
+function findUserEntryInDbByUsername(username, state = null, adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
   const row = db.prepare(
     'SELECT username, name, role, email FROM users WHERE username = ?'
   ).get(username);
-  return userEntryFromDbRow(row, state);
+  return userEntryFromDbRow(row, state, adminEmails);
 }
 
-function findUserEntryInDbByEmail(email, state = null) {
+function findUserEntryInDbByEmail(email, state = null, adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
   const row = db.prepare(
     'SELECT username, name, role, email FROM users WHERE lower(email) = lower(?)'
   ).get(userSettingsKey(email));
-  return userEntryFromDbRow(row, state);
+  return userEntryFromDbRow(row, state, adminEmails);
 }
 
 function payloadGroups(payload) {
@@ -458,16 +494,16 @@ function setUserSettings(state, user, settings) {
   return state.userSettings[key];
 }
 
-function findUserByEmail(state, email) {
-  const entry = findUserEntryInDbByEmail(email, state);
+function findUserByEmail(state, email, adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
+  const entry = findUserEntryInDbByEmail(email, state, adminEmails);
   if (entry) return entry.user;
   const key = userSettingsKey(email);
   return normalizeUsers(state.users).map((entry) => entry.user).find((user) => userSettingsKey(user.email) === key) || null;
 }
 
-function isAdminRequest(state, headers = {}) {
+function isAdminRequest(state, headers = {}, adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
   const email = headers['x-bportal-user-email'] || headers['X-Bportal-User-Email'];
-  const user = findUserByEmail(state, email);
+  const user = findUserByEmail(state, email, adminEmails);
   return Boolean(user && user.role === 'admin');
 }
 
@@ -583,6 +619,258 @@ function parseBody(body) {
   }
 }
 
+function ambCentralEndpoint(apiUrl, endpointPath) {
+  const base = String(apiUrl || '').replace(/\/+$/, '');
+  const suffix = String(endpointPath || '').replace(/^\/+/, '');
+  return `${base}/${suffix}`;
+}
+
+async function responseJson(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
+async function ambCentralRequest(endpointPath, {
+  apiUrl = AMBCENTRAL_API_URL,
+  fetchFn = globalThis.fetch?.bind(globalThis),
+  method = 'GET',
+  token = '',
+  body = null,
+} = {}) {
+  if (!apiUrl) {
+    return {
+      ok: false,
+      status: 503,
+      data: {
+        error: 'ambcentral_not_configured',
+        message: 'AMBCENTRAL_API_URL is not configured.',
+      },
+    };
+  }
+
+  if (typeof fetchFn !== 'function') {
+    return {
+      ok: false,
+      status: 503,
+      data: {
+        error: 'ambcentral_fetch_unavailable',
+        message: 'Fetch is not available in this runtime.',
+      },
+    };
+  }
+
+  try {
+    const headers = { accept: 'application/json' };
+    const options = { method, headers };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (body !== null) {
+      headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
+    }
+
+    const response = await fetchFn(ambCentralEndpoint(apiUrl, endpointPath), options);
+    const data = await responseJson(response);
+    return {
+      ok: response.ok,
+      status: response.status,
+      data,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 503,
+      data: {
+        error: 'ambcentral_unavailable',
+        message: error.message,
+      },
+    };
+  }
+}
+
+function usernameFromAmbCentralUser(user = {}) {
+  const ref = String(user.ref || '').trim();
+  if (ref) return ref;
+
+  const username = String(user.username || '').trim();
+  if (username) return username;
+
+  const emailLocalPart = userSettingsKey(user.email).split('@')[0];
+  if (emailLocalPart) return emailLocalPart;
+
+  const id = String(user.id || '').trim();
+  return id ? `amb-${id}` : '';
+}
+
+function nameFromAmbCentralUser(user = {}) {
+  return String(
+    user.full_name
+    || user.name
+    || [user.first_name, user.last_name].filter(Boolean).join(' ')
+    || userSettingsKey(user.email).split('@')[0]
+    || usernameFromAmbCentralUser(user)
+  ).trim();
+}
+
+function ambCentralStaffEntry(user = {}, existingEntry = null, adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
+  const username = usernameFromAmbCentralUser(user);
+  const email = userSettingsKey(user.email);
+  const name = nameFromAmbCentralUser(user);
+  if (!username || !email || !name) return null;
+
+  const groups = normalizeUserGroups(existingEntry && existingEntry.user);
+  return {
+    username,
+    password: existingEntry?.password || generatePassword(32),
+    user: {
+      name,
+      role: normalizeAmbCentralRole(user.role, email, adminEmails),
+      email,
+      ...(groups.length ? { group: groups[0], groups } : {}),
+    },
+  };
+}
+
+function syncAmbCentralStaffUsers(state, staffUsers = [], adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
+  const currentUsers = listUserEntriesFromDb(state, adminEmails);
+  const currentByEmail = new Map(currentUsers.map((entry) => [userSettingsKey(entry.user.email), entry]));
+  const currentByUsername = new Map(currentUsers.map((entry) => [entry.username.toLowerCase(), entry]));
+  const synced = [];
+
+  for (const staffUser of Array.isArray(staffUsers) ? staffUsers : []) {
+    const email = userSettingsKey(staffUser && staffUser.email);
+    const username = usernameFromAmbCentralUser(staffUser);
+    const existingEntry = currentByEmail.get(email) || currentByUsername.get(String(username || '').toLowerCase()) || null;
+    const entry = ambCentralStaffEntry(staffUser, existingEntry, adminEmails);
+    if (!entry) continue;
+
+    if (existingEntry && existingEntry.username !== entry.username) {
+      deleteUserFromDb(existingEntry.username);
+    }
+
+    upsertUserInDb(entry.username, entry.password, entry.user);
+    synced.push(entry);
+  }
+
+  const syncedByEmail = new Map(synced.map((entry) => [userSettingsKey(entry.user.email), entry]));
+  const merged = [];
+  const seen = new Set();
+  for (const entry of [...synced, ...currentUsers]) {
+    const email = userSettingsKey(entry.user.email);
+    if (seen.has(email)) continue;
+    merged.push(syncedByEmail.get(email) || entry);
+    seen.add(email);
+  }
+
+  state.users = merged;
+  return synced.map(publicUserEntry);
+}
+
+async function handleAmbCentralLogin(payload, state, {
+  apiUrl = AMBCENTRAL_API_URL,
+  fetchFn = globalThis.fetch?.bind(globalThis),
+  persist = false,
+  dataFile = DATA_FILE,
+  adminEmails = ENV_BPORTAL_ADMIN_EMAILS,
+} = {}) {
+  const email = userSettingsKey(payload && payload.email);
+  const challengeId = String(payload && payload.challenge_id || '').trim();
+  const code = String(payload && payload.code || '').trim();
+
+  if (!email) return json(400, { error: 'missing_email' });
+
+  if (!challengeId && !code) {
+    const requested = await ambCentralRequest('/api/auth/login', {
+      apiUrl,
+      fetchFn,
+      method: 'POST',
+      body: { email },
+    });
+    return json(requested.status, requested.data);
+  }
+
+  if (!challengeId || !code) {
+    return json(400, { error: 'missing_code' });
+  }
+
+  const verified = await ambCentralRequest('/api/auth/login', {
+    apiUrl,
+    fetchFn,
+    method: 'POST',
+    body: { email, challenge_id: challengeId, code },
+  });
+  if (!verified.ok) return json(verified.status, verified.data);
+
+  const accessToken = String(verified.data.access_token || '');
+  if (!accessToken) {
+    return json(502, {
+      error: 'ambcentral_invalid_response',
+      message: 'AmbCentral did not return an access token.',
+    });
+  }
+
+  const directory = await ambCentralRequest('/api/staff/directory', {
+    apiUrl,
+    fetchFn,
+    token: accessToken,
+  });
+  if (!directory.ok) return json(directory.status, directory.data);
+
+  const staffUsers = Array.isArray(directory.data.users) ? directory.data.users : [];
+  syncAmbCentralStaffUsers(state, staffUsers, adminEmails);
+  if (persist) saveState(state, dataFile);
+
+  const currentEntry = findUserEntryInDbByEmail(email, state, adminEmails)
+    || ambCentralStaffEntry({ ...verified.data.user, email }, null, adminEmails);
+  if (!currentEntry) return json(403, { error: 'access_denied' });
+
+  const publicUser = publicUserEntry(currentEntry);
+  return json(200, {
+    accessToken,
+    expiresIn: Number(verified.data.expires_in || 0),
+    user: publicUser,
+    settings: getUserSettings(state, currentEntry.user),
+  });
+}
+
+function bearerTokenFromHeaders(headers = {}) {
+  const value = headers.authorization || headers.Authorization || '';
+  const match = String(value).match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : '';
+}
+
+async function resolveRequestUser(state, headers = {}, {
+  apiUrl = AMBCENTRAL_API_URL,
+  fetchFn = globalThis.fetch?.bind(globalThis),
+  adminEmails = ENV_BPORTAL_ADMIN_EMAILS,
+} = {}) {
+  const token = bearerTokenFromHeaders(headers);
+  if (token) {
+    const verified = await ambCentralRequest('/api/auth/verify', {
+      apiUrl,
+      fetchFn,
+      token,
+    });
+
+    if (verified.ok && verified.data.authenticated !== false) {
+      const ambUser = verified.data.user || {};
+      const username = usernameFromAmbCentralUser(ambUser);
+      const email = userSettingsKey(ambUser.email);
+      let entry = username ? findUserEntryInDbByUsername(username, state, adminEmails) : null;
+      if (!entry && email) entry = findUserEntryInDbByEmail(email, state, adminEmails);
+      if (!entry) {
+        entry = ambCentralStaffEntry(ambUser, null, adminEmails);
+        if (entry) upsertUserInDb(entry.username, entry.password, entry.user);
+      }
+      if (entry) return entry.user;
+    }
+  }
+
+  return findUserByEmail(state, headers['x-bportal-user-email'] || headers['X-Bportal-User-Email'], adminEmails);
+}
+
 function validateOrder(payload, state) {
   const details = [];
   const department = normalizeDepartmentName(payload && payload.dept, state);
@@ -672,8 +960,8 @@ function safeZoomMeetingRequest(payload) {
   };
 }
 
-function findUserEntryByEmail(state, email) {
-  const entry = findUserEntryInDbByEmail(email, state);
+function findUserEntryByEmail(state, email, adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
+  const entry = findUserEntryInDbByEmail(email, state, adminEmails);
   if (entry) return entry;
   const key = userSettingsKey(email);
   return normalizeUsers(state.users).find((entry) => userSettingsKey(entry.user.email) === key) || null;
@@ -1571,10 +1859,17 @@ function createApp(options = {}) {
   const state = options.state || loadState(options.dataFile);
   const dataFile = options.dataFile || DATA_FILE;
   const persist = options.persist || Boolean(options.dataFile);
+  const adminEmails = normalizeAdminEmailSet(options.bportalAdminEmails || ENV_BPORTAL_ADMIN_EMAILS);
+  const publicApiBaseUrl = String(options.publicApiBaseUrl || PUBLIC_API_BASE_URL || '').replace(/\/+$/, '');
+  const injectedConfig = `window.__BPORTAL_CONFIG__ = ${JSON.stringify({ apiBase: publicApiBaseUrl })};`;
 
   async function handle({ method, path: requestPath, headers = {}, body = '', signal = null }) {
     const url = new URL(requestPath, 'http://localhost');
-    const requestUser = findUserByEmail(state, headers['x-bportal-user-email'] || headers['X-Bportal-User-Email']);
+    const requestUser = await resolveRequestUser(state, headers, {
+      apiUrl: options.ambCentralApiUrl || AMBCENTRAL_API_URL,
+      fetchFn: options.ambCentralFetch || globalThis.fetch?.bind(globalThis),
+      adminEmails,
+    });
 
     if (method === 'OPTIONS') {
       return {
@@ -1582,7 +1877,7 @@ function createApp(options = {}) {
         headers: {
           'access-control-allow-origin': '*',
           'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-          'access-control-allow-headers': 'content-type,x-bportal-user-email',
+          'access-control-allow-headers': 'authorization,content-type,x-bportal-user-email',
         },
         body: '',
       };
@@ -1611,8 +1906,12 @@ function createApp(options = {}) {
       return json(200, result);
     }
 
+    if (method === 'GET' && url.pathname === '/config.js') {
+      return text(200, injectedConfig, 'application/javascript; charset=utf-8');
+    }
+
     if (method === 'PUT' && url.pathname === '/api/departments') {
-      if (!isAdminRequest(state, headers)) return json(403, { error: 'admin_required' });
+      if (!requestUser || requestUser.role !== 'admin') return json(403, { error: 'admin_required' });
 
       const payload = parseBody(body);
       if (!payload) return json(400, { error: 'invalid_json' });
@@ -1630,13 +1929,23 @@ function createApp(options = {}) {
       const payload = parseBody(body);
       if (!payload) return json(400, { error: 'invalid_json' });
 
+      if (payload.email) {
+        return handleAmbCentralLogin(payload, state, {
+          apiUrl: options.ambCentralApiUrl || AMBCENTRAL_API_URL,
+          fetchFn: options.ambCentralFetch || globalThis.fetch?.bind(globalThis),
+          persist,
+          dataFile,
+          adminEmails,
+        });
+      }
+
       const userEntry = db.prepare('SELECT * FROM users WHERE username = ?').get(payload.username);
 
       if (!userEntry || !bcrypt.compareSync(payload.password, userEntry.password_hash)) {
           return json(401, { error: 'invalid_credentials' });
       }
       
-      const stateUser = findUserEntryInDbByUsername(userEntry.username, state)
+      const stateUser = findUserEntryInDbByUsername(userEntry.username, state, adminEmails)
         || normalizeUsers(state.users).find((u) => u.username === userEntry.username);
       const user = {
           username: userEntry.username,
@@ -1653,7 +1962,7 @@ function createApp(options = {}) {
 
     if (method === 'GET' && url.pathname === '/api/users') {
       return json(200, {
-        users: listUserEntriesFromDb(state).map(publicUserEntry),
+        users: listUserEntriesFromDb(state, adminEmails).map(publicUserEntry),
       });
     }
 
@@ -1678,158 +1987,29 @@ function createApp(options = {}) {
 
     const userActionMatch = url.pathname.match(/^\/api\/users\/([^/]+)\/(send-login|reset-password|impersonate)$/);
     if (method === 'POST' && userActionMatch) {
-      if (!isAdminRequest(state, headers)) return json(403, { error: 'admin_required' });
+      if (!requestUser || requestUser.role !== 'admin') return json(403, { error: 'admin_required' });
 
       const username = decodeURIComponent(userActionMatch[1]);
-      const users = listUserEntriesFromDb(state);
+      const users = listUserEntriesFromDb(state, adminEmails);
       const index = users.findIndex((entry) => entry.username === username);
       if (index === -1) return json(404, { error: 'user_not_found' });
 
       const action = userActionMatch[2];
       const user = users[index];
 
-      if (action === 'send-login') {
-        const loginUrl = 'https://resultatmedai.se/demo';
-        notifyByEmail({
-          to: user.user.email,
-          subject: 'Dina inloggningsuppgifter till Ambitionsverige Bportal',
-          text: [
-            `Hej ${user.user.name}!`,
-            '',
-            'Välkommen till Ambitionsverige Bportal – beställningssystemet för alla partiaktiva.',
-            'Här kan du skicka frågor och beställningar till rätt avdelning, oavsett om det',
-            'gäller marknadsföring, grafiskt material, juridiska frågor eller annat.',
-            '',
-            'Här är dina inloggningsuppgifter till demoversionen:',
-            '',
-            `Användarnamn: ${user.username}`,
-            `Lösenord: ${user.password}`,
-            '',
-            'Logga in på Bportal via knappen i det HTML-formaterade mejlet.',
-            '',
-            'Hälsningar,',
-            'IT-teamet',
-            'Ambition Sverige',
-          ].join('\n'),
-          html: [
-            '<!DOCTYPE html>',
-            '<html>',
-            '<head><meta charset="utf-8"></head>',
-            '<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif">',
-            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:30px 10px">',
-            '<tr><td align="center">',
-            '<table role="presentation" width="540" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden">',
-            '<tr><td style="background:#1a5c8a;padding:30px;text-align:center">',
-            '<h1 style="color:#ffffff;margin:0;font-size:22px">Ambitionsverige Bportal</h1>',
-            '</td></tr>',
-            '<tr><td style="padding:35px 30px">',
-            `<p style="font-size:16px;color:#333;margin:0 0 20px">Hej ${user.user.name}!</p>`,
-            '<p style="font-size:15px;color:#555;margin:0 0 10px">Välkommen till Ambitionsverige Bportal – beställningssystemet för alla partiaktiva.</p>',
-            '<p style="font-size:15px;color:#555;margin:0 0 25px">Här kan du skicka frågor och beställningar till rätt avdelning, oavsett om det gäller marknadsföring, grafiskt material, juridiska frågor eller annat.</p>',
-            '<p style="font-size:15px;color:#555;margin:0 0 25px">Här är dina inloggningsuppgifter till <strong>demoversionen</strong>:</p>',
-            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0f7fc;border-radius:6px;padding:20px;margin:0 0 25px">',
-            `<tr><td style="font-size:14px;color:#888;padding:5px 0">Användarnamn</td></tr>`,
-            `<tr><td style="font-size:16px;color:#1a5c8a;font-weight:bold;padding:0 0 15px">${user.username}</td></tr>`,
-            `<tr><td style="font-size:14px;color:#888;padding:5px 0">Lösenord</td></tr>`,
-            `<tr><td style="font-size:16px;color:#1a5c8a;font-weight:bold;padding:0 0 5px">${user.password}</td></tr>`,
-            '</table>',
-            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">',
-            '<tr><td align="center" style="padding:0 0 25px">',
-            `<a href="${loginUrl}" style="display:inline-block;background:#1a5c8a;color:#ffffff;text-decoration:none;font-size:16px;font-weight:bold;padding:14px 40px;border-radius:6px">Logga in på Bportal</a>`,
-            '</td></tr>',
-            '</table>',
-            '</td></tr>',
-            '<tr><td style="background:#f9f9f9;padding:20px 30px;text-align:center;border-top:1px solid #eee">',
-            '<p style="font-size:14px;color:#888;margin:0">Hälsningar,<br>IT-teamet<br>Ambition Sverige</p>',
-            '</td></tr>',
-            '</table>',
-            '</td></tr>',
-            '</table>',
-            '</body>',
-            '</html>',
-          ].join('\n'),
+      if (action === 'send-login' || action === 'reset-password') {
+        return json(410, {
+          error: 'ambcentral_managed_login',
+          message: 'Inloggning och verifieringskoder hanteras av AmbCentral.',
         });
-
-        return json(200, { ok: true });
-      }
-
-      if (action === 'reset-password') {
-        const newPassword = generatePassword();
-        users[index].password = newPassword;
-        state.users = users;
-        if (persist) saveState(state, dataFile);
-
-        upsertUserInDb(users[index].username, newPassword, users[index].user);
-
-        const loginUrl = 'https://resultatmedai.se/demo';
-        notifyByEmail({
-          to: user.user.email,
-          subject: 'Ditt lösenord har återställts - Ambitionsverige Bportal',
-          text: [
-            `Hej ${user.user.name}!`,
-            '',
-            'Ambitionsverige Bportal är beställningssystemet för alla partiaktiva.',
-            'Här kan du skicka frågor och beställningar till rätt avdelning.',
-            '',
-            'Ditt lösenord har återställts av en administratör.',
-            '',
-            `Användarnamn: ${user.username}`,
-            `Nytt lösenord: ${newPassword}`,
-            '',
-            'Logga in på Bportal via knappen i det HTML-formaterade mejlet.',
-            '',
-            'Hälsningar,',
-            'IT-teamet',
-            'Ambition Sverige',
-          ].join('\n'),
-          html: [
-            '<!DOCTYPE html>',
-            '<html>',
-            '<head><meta charset="utf-8"></head>',
-            '<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif">',
-            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:30px 10px">',
-            '<tr><td align="center">',
-            '<table role="presentation" width="540" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden">',
-            '<tr><td style="background:#1a5c8a;padding:30px;text-align:center">',
-            '<h1 style="color:#ffffff;margin:0;font-size:22px">Ambitionsverige Bportal</h1>',
-            '</td></tr>',
-            '<tr><td style="padding:35px 30px">',
-            `<p style="font-size:16px;color:#333;margin:0 0 20px">Hej ${user.user.name}!</p>`,
-            '<p style="font-size:15px;color:#555;margin:0 0 10px">Ambitionsverige Bportal är beställningssystemet för alla partiaktiva.</p>',
-            '<p style="font-size:15px;color:#555;margin:0 0 25px">Här kan du skicka frågor och beställningar till rätt avdelning.</p>',
-            '<p style="font-size:15px;color:#555;margin:0 0 25px">Ditt lösenord har återställts av en administratör. Här är dina uppgifter till <strong>demoversionen</strong>:</p>',
-            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0f7fc;border-radius:6px;padding:20px;margin:0 0 25px">',
-            `<tr><td style="font-size:14px;color:#888;padding:5px 0">Användarnamn</td></tr>`,
-            `<tr><td style="font-size:16px;color:#1a5c8a;font-weight:bold;padding:0 0 15px">${user.username}</td></tr>`,
-            `<tr><td style="font-size:14px;color:#888;padding:5px 0">Nytt lösenord</td></tr>`,
-            `<tr><td style="font-size:16px;color:#1a5c8a;font-weight:bold;padding:0 0 5px">${newPassword}</td></tr>`,
-            '</table>',
-            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">',
-            '<tr><td align="center" style="padding:0 0 25px">',
-            `<a href="${loginUrl}" style="display:inline-block;background:#1a5c8a;color:#ffffff;text-decoration:none;font-size:16px;font-weight:bold;padding:14px 40px;border-radius:6px">Logga in på Bportal</a>`,
-            '</td></tr>',
-            '</table>',
-            '</td></tr>',
-            '<tr><td style="background:#f9f9f9;padding:20px 30px;text-align:center;border-top:1px solid #eee">',
-            '<p style="font-size:14px;color:#888;margin:0">Hälsningar,<br>IT-teamet<br>Ambition Sverige</p>',
-            '</td></tr>',
-            '</table>',
-            '</td></tr>',
-            '</table>',
-            '</body>',
-            '</html>',
-          ].join('\n'),
-        });
-
-        return json(200, { ok: true });
       }
 
       if (action === 'impersonate') {
-        const adminEmail = headers['x-bportal-user-email'] || headers['X-Bportal-User-Email'];
+        const adminEmail = requestUser.email;
         console.log(`[AUDIT] User ${adminEmail} started impersonating user ${user.username}`);
         
         // Re-fetch the latest user data from the database-backed user list.
-        const currentUsers = listUserEntriesFromDb(state);
+        const currentUsers = listUserEntriesFromDb(state, adminEmails);
         const latestUserEntry = currentUsers.find(u => u.username === user.username);
         const userData = latestUserEntry ? latestUserEntry.user : user;
 
@@ -1849,7 +2029,7 @@ function createApp(options = {}) {
     const userMatch = url.pathname.match(/^\/api\/users\/([^/]+)$/);
     if (method === 'PUT' && userMatch) {
       const username = decodeURIComponent(userMatch[1]);
-      const users = listUserEntriesFromDb(state);
+      const users = listUserEntriesFromDb(state, adminEmails);
       const index = users.findIndex((entry) => entry.username === username);
       if (index === -1) return json(404, { error: 'user_not_found' });
 
@@ -1872,7 +2052,7 @@ function createApp(options = {}) {
 
     if (method === 'DELETE' && userMatch) {
       const username = decodeURIComponent(userMatch[1]);
-      const users = listUserEntriesFromDb(state);
+      const users = listUserEntriesFromDb(state, adminEmails);
       const index = users.findIndex((entry) => entry.username === username);
       if (index === -1) return json(404, { error: 'user_not_found' });
       if (users[index].user.role === 'admin' && users.filter((entry) => entry.user.role === 'admin').length === 1) {

@@ -17,6 +17,10 @@ Modellen skickas med `keep_alive=-1` som standard, så Ollama behåller den ladd
 Backenden kör ingen egen warmup-loop som standard. För produktion bör modellen laddas vid boot oberoende av backend med systemd-konfigurationen i `../ops/systemd`.
 Det kan ändras med miljövariablerna `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_NUM_CTX`, `OLLAMA_NUM_PREDICT`, `OLLAMA_KEEP_ALIVE`, `OLLAMA_WARMUP` och `OLLAMA_WARMUP_INTERVAL_MS`.
 
+Inloggning går via AmbCentral med e-postkod. Sätt `AMBCENTRAL_API_URL` i `.env`.
+Frontendens API-bas kan styras med `BPORTAL_API_BASE_URL`. Om den lämnas tom använder klienten samma origin som sidan serveras från.
+Admin-rättigheter i Bportal styrs av `BPORTAL_ADMIN_EMAILS`.
+
 ```bash
 cd backend
 npm start
@@ -31,7 +35,7 @@ http://localhost:3001
 ## API
 
 - `GET /api/health` kontrollerar att servern kör.
-- `POST /api/login` tar `{ "username": "...", "password": "..." }`.
+- `POST /api/login` tar `{ "email": "..." }` för att begära kod och `{ "email": "...", "challenge_id": "...", "code": "..." }` för att verifiera. Vid lyckad verifiering synkas staff från AmbCentral till lokala användare.
 - `GET /api/orders` listar alla beställningar.
 - `GET /api/orders?dept=Grafikgruppen` filtrerar på avdelning.
 - `POST /api/orders` skapar en beställning.

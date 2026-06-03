@@ -7,6 +7,7 @@
     <link rel="icon" href="assets/b-logo.svg" type="image/svg+xml">
     <link href="assets/tailwind.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.0/css/all.min.css" rel="stylesheet">
+    <script src="/config.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Arsenal:wght@400;700&display=swap');
         body { font-family: 'Arsenal', sans-serif; background-color: #f3f4f6; overflow-x: hidden; }
@@ -1245,20 +1246,16 @@
             </div>
             <form onsubmit="login(event)" class="space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Användarnamn</label>
-                    <input type="text" id="username" autocomplete="username" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">E-post</label>
+                    <input type="email" id="login-email" autocomplete="email" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition">
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Lösenord</label>
-                    <div class="relative">
-                        <input type="password" id="password" autocomplete="current-password" class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition">
-                        <button type="button" id="toggle-password" onclick="togglePasswordVisibility()" aria-label="Visa lösenord" class="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-gray-500 hover:text-blue-600 focus:text-blue-600 focus:outline-none">
-                            <i class="fa-regular fa-eye" aria-hidden="true"></i>
-                        </button>
-                    </div>
+                <div id="login-code-wrap" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Kod från mejlet</label>
+                    <input type="text" id="login-code" inputmode="numeric" autocomplete="one-time-code" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition">
                 </div>
-                <button type="submit" class="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl hover:bg-blue-700 transition shadow-lg">
-                    Logga in
+                <p id="login-message" class="min-h-5 text-sm font-semibold text-gray-500" aria-live="polite"></p>
+                <button type="submit" id="login-submit" class="w-full bg-blue-600 text-white font-semibold py-3 rounded-xl hover:bg-blue-700 transition shadow-lg">
+                    Skicka kod
                 </button>
             </form>
             <div class="mt-6 text-xs text-gray-400 text-center">
@@ -1581,16 +1578,8 @@
         <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
                 <h2 class="mobile-title text-3xl font-bold text-blue-800">Användare</h2>
-                <p class="text-gray-500">Skapa användare och koppla dem till avdelningar för mejlnotiser.</p>
+                <p class="text-gray-500">Staff synkas från AmbCentral. Koppla dem till avdelningar för mejlnotiser.</p>
             </div>
-            <button onclick="startUserCreate()" class="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white hover:bg-blue-700">
-                <i class="fas fa-user-plus"></i>
-                Ny användare
-            </button>
-            <button onclick="sendAllLoginCredentials()" class="inline-flex items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 py-3 text-sm font-bold text-white hover:bg-purple-700">
-                <i class="fas fa-envelope"></i>
-                Skicka inloggningsuppgifter till alla
-            </button>
         </div>
         <div class="grid gap-6">
             <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow">
@@ -1632,17 +1621,6 @@
                                 <label class="mb-1 block text-sm font-semibold text-gray-700">Användarnamn</label>
                                 <input id="admin-user-username" type="text" autocomplete="username" class="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500">
                                 <p class="mt-2 text-xs text-gray-500">Använd ett kort och unikt namn som är lätt att logga in med.</p>
-                            </div>
-                            <div>
-                                <label class="mb-1 block text-sm font-semibold text-gray-700">Lösenord</label>
-                                <div class="flex gap-2 max-sm:flex-col">
-                                    <input id="admin-user-password" type="text" autocomplete="new-password" class="min-w-0 flex-1 rounded-xl border border-gray-200 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500">
-                                    <button type="button" onclick="generateAdminUserPassword()" class="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700 hover:bg-blue-100">
-                                        <i class="fas fa-wand-magic-sparkles"></i>
-                                        Generera lösenord
-                                    </button>
-                                </div>
-                                <p class="mt-2 text-xs text-gray-500">Vid redigering kan du lämna lösenordet tomt om det inte ska bytas.</p>
                             </div>
                             <div>
                                 <label class="mb-1 block text-sm font-semibold text-gray-700">Namn</label>
@@ -1930,7 +1908,9 @@
         let departmentDragOverIndex = null;
         let departmentMobileExpandedIndex = null;
 
-        const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:3001' : '';
+        const API_BASE = (window.__BPORTAL_CONFIG__ && typeof window.__BPORTAL_CONFIG__.apiBase === 'string')
+            ? window.__BPORTAL_CONFIG__.apiBase
+            : (window.location.protocol === 'file:' ? 'http://localhost:3001' : '');
         const AUTH_STORAGE_KEY = 'bportal_current_user_v1';
         const PROTECTED_DEPARTMENT_NAMES = ['Grafikgruppen', 'Boka zoom-möte'];
         const MAX_ATTACHMENTS = 5;
@@ -2059,6 +2039,9 @@
         let adminEditingUsername = "";
         let impersonatedBy = null;
         let impersonatedBySettings = null;
+        let currentAccessToken = "";
+        let loginChallengeId = "";
+        let loginChallengeEmail = "";
         let currentUserSettings = {
             notifyOrderResponses: true,
             notifyGroupOrders: false,
@@ -2074,12 +2057,12 @@
             return Boolean(
                 user
                 && typeof user.name === 'string'
-                && ['orderer', 'graphics', 'admin'].includes(user.role)
+                && ['orderer', 'graphics', 'member', 'admin'].includes(user.role)
             );
         }
 
-        function saveCurrentUser(user, impersonatedBy = null) {
-            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ user, impersonatedBy }));
+        function saveCurrentUser(user, impersonatedBy = null, accessToken = currentAccessToken) {
+            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ user, impersonatedBy, accessToken }));
         }
 
         function loadStoredUser() {
@@ -2087,6 +2070,7 @@
                 const data = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null');
                 if (data && data.user && isValidStoredUser(data.user)) {
                     impersonatedBy = data.impersonatedBy;
+                    currentAccessToken = String(data.accessToken || '');
                     return data.user;
                 }
             } catch {
@@ -2097,6 +2081,7 @@
         }
 
         function clearStoredUser() {
+            currentAccessToken = "";
             localStorage.removeItem(AUTH_STORAGE_KEY);
         }
 
@@ -2268,10 +2253,14 @@
             departmentRecords = normalized;
         }
 
+        function currentAuthHeaders() {
+            return {
+                ...(currentUser && currentUser.email ? { 'X-Bportal-User-Email': currentUser.email } : {}),
+                ...(currentAccessToken ? { Authorization: `Bearer ${currentAccessToken}` } : {})
+            };
+        }
+
         async function apiRequest(path, options = {}) {
-            const authHeaders = currentUser && currentUser.email
-                ? { 'X-Bportal-User-Email': currentUser.email }
-                : {};
             const { timeoutMs, headers = {}, signal: externalSignal, ...fetchOptions } = options;
             const requestAbortController = timeoutMs ? new AbortController() : null;
             let timeoutId = null;
@@ -2283,7 +2272,7 @@
             }
 
             const response = await fetch(`${API_BASE}${path}`, {
-                headers: { 'Content-Type': 'application/json', ...authHeaders, ...headers },
+                headers: { 'Content-Type': 'application/json', ...currentAuthHeaders(), ...headers },
                 signal: requestAbortController ? requestAbortController.signal : externalSignal,
                 ...fetchOptions
             }).finally(() => {
@@ -3928,52 +3917,84 @@
             if (isModalOpen('attachment-modal')) closeAttachmentModal();
         });
 
-        function togglePasswordVisibility() {
-            const passwordInput = document.getElementById('password');
-            const toggleButton = document.getElementById('toggle-password');
-            const icon = toggleButton.querySelector('i');
-            const shouldShowPassword = passwordInput.type === 'password';
-
-            passwordInput.type = shouldShowPassword ? 'text' : 'password';
-            toggleButton.setAttribute('aria-label', shouldShowPassword ? 'Dölj lösenord' : 'Visa lösenord');
-            icon.classList.toggle('fa-eye', !shouldShowPassword);
-            icon.classList.toggle('fa-eye-slash', shouldShowPassword);
-        }
-
         async function login(event) {
             if (event) event.preventDefault();
 
-            const user = document.getElementById('username').value;
-            const pass = document.getElementById('password').value;
+            const emailInput = document.getElementById('login-email');
+            const codeInput = document.getElementById('login-code');
+            const codeWrap = document.getElementById('login-code-wrap');
+            const message = document.getElementById('login-message');
+            const submit = document.getElementById('login-submit');
+            const email = emailInput.value.trim().toLowerCase();
+            const code = codeInput.value.trim();
 
             try {
+                if (!email) {
+                    message.innerText = 'Ange din e-postadress.';
+                    emailInput.focus();
+                    return;
+                }
+
+                submit.disabled = true;
+                submit.classList.add('opacity-70', 'cursor-wait');
+
+                if (!loginChallengeId || loginChallengeEmail !== email) {
+                    message.innerText = 'Skickar kod...';
+                    const result = await apiRequest('/api/login', {
+                        method: 'POST',
+                        body: JSON.stringify({ email })
+                    });
+                    loginChallengeId = result.challenge_id;
+                    loginChallengeEmail = email;
+                    codeWrap.classList.remove('hidden');
+                    codeInput.value = '';
+                    codeInput.focus();
+                    submit.innerText = 'Logga in';
+                    message.innerText = 'Koden är skickad till din e-post.';
+                    return;
+                }
+
+                if (!code) {
+                    message.innerText = 'Ange koden från mejlet.';
+                    codeInput.focus();
+                    return;
+                }
+
+                message.innerText = 'Verifierar kod...';
                 const result = await apiRequest('/api/login', {
                     method: 'POST',
-                    body: JSON.stringify({ username: user, password: pass })
+                    body: JSON.stringify({ email, challenge_id: loginChallengeId, code })
                 });
                 currentUser = result.user;
+                currentAccessToken = result.accessToken || '';
                 currentUserSettings = normalizeUserSettings(result.settings);
             } catch (error) {
-                if (API_BASE || window.location.protocol !== 'file:') {
-                    alert("Fel inloggning!");
-                    return;
+                const errorCode = error.response && error.response.error;
+                const messages = {
+                    missing_email: 'Ange din e-postadress.',
+                    domain_not_allowed: 'Den e-postdomänen får inte logga in här.',
+                    access_denied: 'Kontot finns inte som staff i AmbCentral.',
+                    not_found: 'Ingen staff-användare hittades med den e-postadressen.',
+                    account_locked: 'Kontot är tillfälligt låst.',
+                    too_many_attempts: 'För många försök. Begär en ny kod.',
+                    invalid_code: 'Koden stämmer inte.',
+                    code_expired: 'Koden har gått ut. Begär en ny kod.',
+                    email_delivery_failed: 'Koden kunde inte skickas just nu.',
+                    ambcentral_unavailable: 'AmbCentral kunde inte nås just nu.'
+                };
+                message.innerText = messages[errorCode] || 'Inloggningen misslyckades.';
+                if (['too_many_attempts', 'code_expired'].includes(errorCode)) {
+                    loginChallengeId = "";
+                    loginChallengeEmail = "";
+                    submit.innerText = 'Skicka kod';
                 }
-
-                if (user === 'user' && pass === 'user') {
-                    currentUser = { username: 'user', name: 'Anders Jansson', role: 'orderer', email: 'personal@example.com' };
-                } else if (user === 'user2' && pass === 'user2') {
-                    currentUser = { username: 'user2', name: 'Anna Olsson', role: 'graphics', email: 'grafikgruppen@example.com', group: 'Grafikgruppen', groups: ['Grafikgruppen'] };
-                } else if (user === 'zoom' && pass === 'demo') {
-                    currentUser = { username: 'zoom', name: 'Zoomansvarig', role: 'member', email: 'zoom@example.com', group: 'Boka zoom-möte', groups: ['Boka zoom-möte'] };
-                } else if (user === 'admin' && pass === 'adminadmin') {
-                    currentUser = { username: 'admin', name: 'Andreas', role: 'admin', email: 'admin@example.com' };
-                } else {
-                    alert("Fel inloggning!");
-                    return;
-                }
+                return;
+            } finally {
+                submit.disabled = false;
+                submit.classList.remove('opacity-70', 'cursor-wait');
             }
 
-            saveCurrentUser(currentUser, null);
+            saveCurrentUser(currentUser, null, currentAccessToken);
             await loadUserSettings(currentUserSettings);
             showAuthenticatedUser();
         }
@@ -4185,8 +4206,6 @@
                             <div class="flex flex-wrap gap-1">
                                 <button onclick="saveInlineUser('${escapeJsString(user.username)}')" class="rounded-lg bg-green-50 px-3 py-1.5 text-xs font-bold text-green-700 hover:bg-green-100 inline-actions hidden">Spara</button>
                                 <button onclick="renderAdminUsers()" class="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-200 inline-actions hidden">Avbryt</button>
-                                <button onclick="sendLoginCredentials('${escapeJsString(user.username)}')" class="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100">Skicka inloggningsuppgifter</button>
-                                <button onclick="resetPassword('${escapeJsString(user.username)}')" class="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-100">Återställ lösenord</button>
                                 <button onclick="deleteAdminUser('${escapeJsString(user.username)}')" class="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100">Ta bort</button>
                                 ${user.role !== 'admin' ? `<button onclick="impersonateUser('${escapeJsString(user.username)}')" class="rounded-lg bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700 hover:bg-purple-100">Visa som</button>` : ''}
                             </div>
@@ -4231,8 +4250,6 @@
                                 </dl>
                                 <div class="mt-4 grid gap-2">
                                     <button type="button" onclick="startUserEdit('${escapeJsString(user.username)}')" class="rounded-xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700 hover:bg-blue-100">Redigera</button>
-                                    <button type="button" onclick="sendLoginCredentials('${escapeJsString(user.username)}')" class="rounded-xl bg-indigo-50 px-4 py-3 text-sm font-bold text-indigo-700 hover:bg-indigo-100">Skicka inloggningsuppgifter</button>
-                                    <button type="button" onclick="resetPassword('${escapeJsString(user.username)}')" class="rounded-xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700 hover:bg-amber-100">Återställ lösenord</button>
                                     <button type="button" onclick="deleteAdminUser('${escapeJsString(user.username)}')" class="rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700 hover:bg-red-100">Ta bort</button>
                                     ${user.role !== 'admin' ? `<button type="button" onclick="impersonateUser('${escapeJsString(user.username)}')" class="rounded-xl bg-purple-50 px-4 py-3 text-sm font-bold text-purple-700 hover:bg-purple-100">Visa som</button>` : ''}
                                 </div>
@@ -4310,44 +4327,6 @@
             }
         }
 
-        async function sendAllLoginCredentials() {
-            if (!confirm(`Är du säker på att du vill skicka inloggningsuppgifter till ALLA ${adminUsers.length} användare?`)) return;
-
-            let successCount = 0;
-            let failCount = 0;
-
-            for (const user of adminUsers) {
-                try {
-                    await apiRequest(`/api/users/${encodeURIComponent(user.username)}/send-login`, { method: 'POST' });
-                    successCount++;
-                } catch (error) {
-                    failCount++;
-                }
-            }
-
-            alert(`Klart! Skickade till ${successCount} användare. Misslyckades för ${failCount} användare.`);
-        }
-
-        async function sendLoginCredentials(username) {
-            if (!confirm(`Skicka inloggningsuppgifter till ${username}?`)) return;
-            try {
-                await apiRequest(`/api/users/${encodeURIComponent(username)}/send-login`, { method: 'POST' });
-                alert('Inloggningsuppgifter skickade till användarens mejl.');
-            } catch (error) {
-                alert('Kunde inte skicka inloggningsuppgifter.');
-            }
-        }
-
-        async function resetPassword(username) {
-            if (!confirm(`Återställ lösenord för ${username}?`)) return;
-            try {
-                await apiRequest(`/api/users/${encodeURIComponent(username)}/reset-password`, { method: 'POST' });
-                alert('Nytt lösenord skickat till användarens mejl.');
-            } catch (error) {
-                alert('Kunde inte återställa lösenordet.');
-            }
-        }
-
         async function impersonateUser(username) {
             try {
                 const result = await apiRequest(`/api/users/${encodeURIComponent(username)}/impersonate`, { method: 'POST' });
@@ -4414,70 +4393,8 @@
             if (event.target.id === 'admin-user-modal') closeAdminUserModal();
         }
 
-        function generateAdminUserPassword(length = 16) {
-            const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-            const lowercase = 'abcdefghijkmnopqrstuvwxyz';
-            const digits = '23456789';
-            const symbols = '!@#$%&*+-=?';
-            const allChars = uppercase + lowercase + digits + symbols;
-            const groups = [uppercase, lowercase, digits, symbols];
-            const values = new Uint32Array(length);
-            const output = [];
-            const randomSource = typeof crypto !== 'undefined' && crypto.getRandomValues
-                ? crypto
-                : null;
-
-            if (randomSource) {
-                randomSource.getRandomValues(values);
-            }
-
-            groups.forEach((group, index) => {
-                const randomIndex = randomSource
-                    ? values[index] % group.length
-                    : Math.floor(Math.random() * group.length);
-                output.push(group[randomIndex]);
-            });
-
-            for (let i = output.length; i < length; i += 1) {
-                const randomIndex = randomSource
-                    ? values[i] % allChars.length
-                    : Math.floor(Math.random() * allChars.length);
-                output.push(allChars[randomIndex]);
-            }
-
-            for (let i = output.length - 1; i > 0; i -= 1) {
-                const randomIndex = randomSource
-                    ? values[i % values.length] % (i + 1)
-                    : Math.floor(Math.random() * (i + 1));
-                const temp = output[i];
-                output[i] = output[randomIndex];
-                output[randomIndex] = temp;
-            }
-
-            const password = output.join('');
-            const passwordInput = document.getElementById('admin-user-password');
-            if (passwordInput) {
-                passwordInput.value = password;
-                passwordInput.focus();
-                passwordInput.select();
-            }
-            return password;
-        }
-
         function startUserCreate() {
-            adminEditingUsername = "";
-            document.getElementById('admin-user-modal-title').innerText = 'Ny användare';
-            document.getElementById('admin-user-modal-intro').innerText = 'Fyll i uppgifterna och koppla användaren till rätt avdelningar.';
-            document.getElementById('admin-user-username').value = '';
-            document.getElementById('admin-user-username').disabled = false;
-            document.getElementById('admin-user-password').value = '';
-            document.getElementById('admin-user-password').placeholder = 'Ange ett initialt lösenord';
-            document.getElementById('admin-user-name').value = '';
-            document.getElementById('admin-user-email').value = '';
-            document.getElementById('admin-user-role').value = 'member';
-            populateAdminGroupSelect('');
-            document.getElementById('admin-user-message').innerText = '';
-            openAdminUserModal();
+            alert('Nya användare skapas i AmbCentral och synkas hit när staff-registret hämtas.');
         }
 
         function startUserEdit(username) {
@@ -4486,11 +4403,9 @@
 
             adminEditingUsername = user.username;
             document.getElementById('admin-user-modal-title').innerText = `Redigera ${user.name}`;
-            document.getElementById('admin-user-modal-intro').innerText = 'Uppdatera uppgifterna. Lämna lösenordet tomt om det inte ska ändras.';
+            document.getElementById('admin-user-modal-intro').innerText = 'Uppdatera lokala uppgifter och avdelningskopplingar. Inloggning hanteras av AmbCentral.';
             document.getElementById('admin-user-username').value = user.username;
             document.getElementById('admin-user-username').disabled = false;
-            document.getElementById('admin-user-password').value = '';
-            document.getElementById('admin-user-password').placeholder = 'Lämna tomt om lösenordet inte ska ändras';
             document.getElementById('admin-user-name').value = user.name;
             document.getElementById('admin-user-email').value = user.email;
             document.getElementById('admin-user-role').value = user.role;
@@ -4509,15 +4424,20 @@
             const existing = adminUsers.find((entry) => entry.username === adminEditingUsername);
             const payload = {
                 username: document.getElementById('admin-user-username').value.trim(),
-                password: document.getElementById('admin-user-password').value.trim(),
+                password: '',
                 name: document.getElementById('admin-user-name').value.trim(),
                 email: document.getElementById('admin-user-email').value.trim(),
                 role: document.getElementById('admin-user-role').value,
                 groups: selectedAdminGroups()
             };
 
-            if (!payload.username || (!existing && !payload.password) || !payload.name || !payload.email) {
-                alert('Fyll i användarnamn, lösenord, namn och e-post.');
+            if (!existing) {
+                alert('Nya användare skapas i AmbCentral och synkas hit från staff-registret.');
+                return;
+            }
+
+            if (!payload.username || !payload.name || !payload.email) {
+                alert('Fyll i användarnamn, namn och e-post.');
                 return;
             }
 
@@ -4686,17 +4606,14 @@
             if (name === null) return;
             const email = prompt('E-post', user.email);
             if (email === null) return;
-            const role = prompt('Behörighet: orderer, graphics eller admin', user.role);
+            const role = prompt('Behörighet: member eller admin', user.role);
             if (role === null) return;
-            const password = prompt('Nytt lösenord, lämna tomt för att behålla nuvarande', '');
-            if (password === null) return;
 
             try {
                 await saveDepartmentPerson(user, {
                     name: name.trim(),
                     email: email.trim(),
                     role: role.trim(),
-                    password: password.trim(),
                     groups: userGroups(user)
                 });
             } catch (error) {
@@ -4709,33 +4626,7 @@
             const departmentName = String(department && department.name || '').trim();
             if (!departmentName) return;
 
-            const name = prompt('Namn på person');
-            if (name === null) return;
-            const email = prompt('E-post');
-            if (email === null) return;
-            const usernameDefault = String(email || '').split('@')[0] || String(name || '').toLowerCase().replace(/\s+/g, '.');
-            const username = prompt('Användarnamn', usernameDefault);
-            if (username === null) return;
-            const password = prompt('Lösenord', 'demo');
-            if (password === null) return;
-
-            try {
-                await apiRequest('/api/users', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        username: username.trim(),
-                        password: password.trim(),
-                        name: name.trim(),
-                        email: email.trim(),
-                        role: 'graphics',
-                        groups: [departmentName]
-                    })
-                });
-                await loadAdminUserData();
-                renderDepartments();
-            } catch (error) {
-                alert('Personen kunde inte skapas. Kontrollera att användarnamn och e-post är unika.');
-            }
+            alert(`Skapa personen som staff i AmbCentral först. När staff-registret har synkats kan du koppla personen till ${departmentName}.`);
         }
 
         function createMenuBtn(title, icon, color, action) {
@@ -5526,7 +5417,7 @@
             try {
                 const response = await fetch(`${API_BASE}/api/ai/suggest`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', ...currentAuthHeaders() },
                     signal: requestAbortController.signal,
                     body: JSON.stringify({ messages: aiChatHistory, stream: true })
                 });
@@ -5962,10 +5853,13 @@
         }
         
         document.addEventListener('DOMContentLoaded', () => {
-            const usernameInput = document.getElementById('username');
-            const passwordInput = document.getElementById('password');
-            if (usernameInput) usernameInput.value = '';
-            if (passwordInput) passwordInput.value = '';
+            const emailInput = document.getElementById('login-email');
+            const codeInput = document.getElementById('login-code');
+            if (emailInput) {
+                emailInput.value = '';
+                if (!currentUser) emailInput.focus();
+            }
+            if (codeInput) codeInput.value = '';
         });
     </script>
 </body>

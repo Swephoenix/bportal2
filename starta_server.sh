@@ -31,6 +31,16 @@ fi
 echo "Building Tailwind CSS..."
 npm run build:tailwind
 
+mkdir -p "$ROOT_DIR/backend/data"
+
+BACKEND_PORT=3001
+if [ -f "$ROOT_DIR/backend/.env" ]; then
+  ENV_PORT="$(grep -E '^PORT=' "$ROOT_DIR/backend/.env" | tail -n 1 | cut -d= -f2- | tr -d '[:space:]')"
+  if [ -n "$ENV_PORT" ]; then
+    BACKEND_PORT="$ENV_PORT"
+  fi
+fi
+
 cd "$ROOT_DIR/backend"
 echo "Starting backend server..."
 nohup node server.js > backend.log 2>&1 &
@@ -48,6 +58,7 @@ for _ in 1 2 3 4 5; do
       break
     fi
     echo "Backend server started with nohup (PID: $PID). Logs available in backend/backend.log"
+    echo "Open http://localhost:$BACKEND_PORT"
     exit 0
   fi
 

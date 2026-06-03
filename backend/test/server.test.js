@@ -238,6 +238,60 @@ test('PUT /api/departments requires admin user', async () => {
   assert.equal(response.body.error, 'admin_required');
 });
 
+test('PUT /api/departments accepts an AmbCentral bearer token for an admin', async () => {
+  const app = createApp({
+    state: createDefaultState(),
+    ambCentralApiUrl: 'https://ambcentral.example.test',
+    ambCentralFetch: async (url, options = {}) => {
+      assert.equal(url, 'https://ambcentral.example.test/api/auth/verify');
+      assert.equal(options.headers.Authorization, 'Bearer admin-token');
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            authenticated: true,
+            user: {
+              ref: 'admin',
+              full_name: 'Andreas',
+              email: 'admin@example.com',
+              role: 'globaladmin',
+            },
+          };
+        },
+      };
+    },
+  });
+
+  const response = await request(app, 'PUT', '/api/departments', {
+    departments: [
+      { name: 'Chefens avdelning' },
+    ],
+  }, {
+    Authorization: 'Bearer admin-token',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.departments[0].name, 'Chefens avdelning');
+});
+
+test('GET /config.js exposes the configured public API base', async () => {
+  const app = createApp({
+    state: createDefaultState(),
+    publicApiBaseUrl: 'https://app.example.test',
+  });
+
+  const response = await app.inject({
+    method: 'GET',
+    path: '/config.js',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['content-type'], 'application/javascript; charset=utf-8');
+  assert.match(response.body, /window\.__BPORTAL_CONFIG__/);
+  assert.match(response.body, /https:\/\/app\.example\.test/);
+});
+
 test('POST /api/login accepts a demo member account', async () => {
   const app = freshApp();
   const response = await request(app, 'POST', '/api/login', {
@@ -262,6 +316,220 @@ test('POST /api/login accepts the admin demo account with password adminadmin', 
   assert.equal(response.body.user.name, 'Andreas');
   assert.equal(response.body.user.role, 'admin');
   assert.equal(response.body.user.email, 'admin@example.com');
+});
+
+test('POST /api/login requests an AmbCentral email code', async () => {
+  const calls = [];
+  const app = createApp({
+    state: createDefaultState(),
+    ambCentralApiUrl: 'https://ambcentral.example.test',
+    ambCentralFetch: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 202,
+        async json() {
+          return { challenge_id: 'challenge-123', expires_in: 600 };
+        },
+      };
+    },
+  });
+
+  const response = await request(app, 'POST', '/api/login', {
+    email: 'anna@ambitionsverige.se',
+  });
+
+  assert.equal(response.statusCode, 202);
+  assert.deepEqual(response.body, { challenge_id: 'challenge-123', expires_in: 600 });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://ambcentral.example.test/api/auth/login');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { email: 'anna@ambitionsverige.se' });
+});
+
+test('POST /api/login verifies an AmbCentral code and syncs staff users', async () => {
+  const calls = [];
+  const app = createApp({
+    state: createDefaultState(),
+    ambCentralApiUrl: 'https://ambcentral.example.test',
+    ambCentralFetch: async (url, options = {}) => {
+      calls.push({ url, options });
+      if (url.endsWith('/api/auth/login')) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              access_token: 'token-abc',
+              expires_in: 43200,
+              user: {
+                id: 7,
+                ref: 'U10007',
+                full_name: 'Anna Andersson',
+                email: 'anna@ambitionsverige.se',
+                role: 'administrator',
+              },
+            };
+          },
+        };
+      }
+
+      assert.equal(url, 'https://ambcentral.example.test/api/staff/directory');
+      assert.equal(options.headers.Authorization, 'Bearer token-abc');
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            users: [
+              {
+                id: 7,
+                ref: 'U10007',
+                full_name: 'Anna Andersson',
+                email: 'anna@ambitionsverige.se',
+                role: 'administrator',
+              },
+              {
+                id: 8,
+                ref: 'U10008',
+                full_name: 'Val Arbetare',
+                email: 'val@ambitionsverige.se',
+                role: 'valarbetare',
+              },
+            ],
+            total: 2,
+          };
+        },
+      };
+    },
+  });
+
+  const response = await request(app, 'POST', '/api/login', {
+    email: 'anna@ambitionsverige.se',
+    challenge_id: 'challenge-123',
+    code: '482916',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.accessToken, 'token-abc');
+  assert.equal(response.body.expiresIn, 43200);
+  assert.deepEqual(response.body.user, {
+    username: 'U10007',
+    name: 'Anna Andersson',
+    role: 'member',
+    email: 'anna@ambitionsverige.se',
+    group: '',
+    groups: [],
+  });
+
+  const users = await request(app, 'GET', '/api/users');
+  assert.equal(users.statusCode, 200);
+  assert.equal(users.body.users.some((user) => (
+    user.username === 'U10008'
+    && user.name === 'Val Arbetare'
+    && user.email === 'val@ambitionsverige.se'
+    && user.role === 'member'
+  )), true);
+  assert.equal(calls.length, 2);
+});
+
+test('POST /api/login marks only the configured Bportal admin emails as admin', async () => {
+  const app = createApp({
+    state: createDefaultState(),
+    bportalAdminEmails: new Set([
+      'andreas.jansson@ambitionsverige.se',
+      'mattias.kihl@ambitionsverige.se',
+    ]),
+    ambCentralApiUrl: 'https://ambcentral.example.test',
+    ambCentralFetch: async (url, options = {}) => {
+      if (url.endsWith('/api/auth/login')) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              access_token: 'token-admins',
+              expires_in: 43200,
+              user: {
+                ref: 'U20001',
+                full_name: 'Andreas Jansson',
+                email: 'andreas.jansson@ambitionsverige.se',
+                role: 'administrator',
+              },
+            };
+          },
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            users: [
+              {
+                ref: 'U20001',
+                full_name: 'Andreas Jansson',
+                email: 'andreas.jansson@ambitionsverige.se',
+                role: 'administrator',
+              },
+              {
+                ref: 'U20002',
+                full_name: 'Mattias Kihl',
+                email: 'mattias.kihl@ambitionsverige.se',
+                role: 'valarbetare',
+              },
+              {
+                ref: 'U20003',
+                full_name: 'Val Arbetare',
+                email: 'val@ambitionsverige.se',
+                role: 'administrator',
+              },
+            ],
+            total: 3,
+          };
+        },
+      };
+    },
+  });
+
+  const response = await request(app, 'POST', '/api/login', {
+    email: 'andreas.jansson@ambitionsverige.se',
+    challenge_id: 'challenge-123',
+    code: '482916',
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.user.role, 'admin');
+
+  const users = await request(app, 'GET', '/api/users');
+  const byEmail = Object.fromEntries(users.body.users.map((user) => [user.email, user.role]));
+  assert.equal(byEmail['andreas.jansson@ambitionsverige.se'], 'admin');
+  assert.equal(byEmail['mattias.kihl@ambitionsverige.se'], 'admin');
+  assert.equal(byEmail['val@ambitionsverige.se'], 'member');
+});
+
+test('POST /api/login forwards AmbCentral login errors', async () => {
+  const app = createApp({
+    state: createDefaultState(),
+    ambCentralApiUrl: 'https://ambcentral.example.test',
+    ambCentralFetch: async () => ({
+      ok: false,
+      status: 403,
+      async json() {
+        return { error: 'access_denied', message: 'User has no staff role' };
+      },
+    }),
+  });
+
+  const response = await request(app, 'POST', '/api/login', {
+    email: 'anna@ambitionsverige.se',
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.deepEqual(response.body, {
+    error: 'access_denied',
+    message: 'User has no staff role',
+  });
 });
 
 test('default demo users cover every department with at least one person', async () => {
@@ -410,6 +678,16 @@ test('admin user API prevents removing the final admin', async () => {
 
   assert.equal(response.statusCode, 400);
   assert.equal(response.body.error, 'last_admin');
+});
+
+test('admin user API no longer sends or resets local passwords', async () => {
+  const app = freshApp();
+  const response = await request(app, 'POST', '/api/users/user/send-login', undefined, {
+    'x-bportal-user-email': 'admin@example.com',
+  });
+
+  assert.equal(response.statusCode, 410);
+  assert.equal(response.body.error, 'ambcentral_managed_login');
 });
 
 test('POST /api/login rejects invalid credentials', async () => {
