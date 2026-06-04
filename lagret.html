@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beställning och Låneschema</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brandBlue: '#1e3a8a', 
+            brandGreen: '#10a342', 
+            brandBg: '#f3f4f6' 
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-brandBg min-h-screen flex flex-col items-center justify-start p-4 md:p-8 font-sans pb-20">
+
+  <!-- Övre navigering -->
+  <div class="w-full max-w-5xl flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+    <a href="#" class="text-blue-600 hover:text-blue-800 flex items-center gap-2 text-sm font-medium">
+      <i class="fa-solid fa-arrow-left"></i> Tillbaka till avdelningar
+    </a>
+    
+    <button onclick="toggleView()" class="bg-brandBlue text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-900 transition flex items-center gap-2 shadow">
+      <i class="fa-solid fa-user-gear"></i> 
+      <span id="toggleButtonText">Växla till Materialansvarig</span>
+    </button>
+  </div>
+
+  <!-- HUVUDKORT -->
+  <main class="w-full max-w-5xl bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-10 transition-all">
+    
+    <!-- ================= VY 1: BESTÄLLARE ================= -->
+    <section id="userView" class="block">
+      <h1 class="text-2xl md:text-3xl font-bold text-brandBlue mb-8">Beställning: Förbrukning & Lån</h1>
+      
+      <form id="orderForm" onsubmit="handleOrderSubmit(event)">
+        
+        <!-- Sektion 1: Välj artiklar -->
+        <div class="mb-6">
+          <label class="block text-gray-700 font-semibold mb-3">Välj artiklar att beställa / låna</label>
+          <div class="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-gray-100 border-b border-gray-200">
+                  <th class="p-3 text-sm font-semibold text-gray-600">Artikel</th>
+                  <th class="p-3 text-sm font-semibold text-gray-600">Typ</th>
+                  <th class="p-3 text-sm font-semibold text-gray-600 text-center">Tillgängligt totalt</th>
+                  <th class="p-3 text-sm font-semibold text-gray-600 text-right">Schema</th>
+                  <th class="p-3 text-sm font-semibold text-gray-600 text-right w-32">Antal</th>
+                </tr>
+              </thead>
+              <tbody id="inventoryTableBody">
+                <!-- Genereras av JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Dynamisk låneperiod (Visas bara om man valt att låna något) -->
+        <div id="loanPeriodSection" class="mb-8 bg-blue-50 border border-blue-200 rounded-lg p-4 hidden">
+          <h3 class="text-sm font-bold text-brandBlue mb-2 flex items-center gap-2">
+            <i class="fa-regular fa-clock"></i> Låneperiod (Krävs för låneprodukter)
+          </h3>
+          <p class="text-xs text-gray-600 mb-3">Du har valt en eller flera låneartiklar. Vänligen ange vilka datum de ska lånas.</p>
+          <div class="flex gap-4">
+            <div class="flex-1">
+              <label class="block text-xs font-semibold text-gray-700 mb-1">Från och med</label>
+              <input type="date" id="loanStartDate" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex-1">
+              <label class="block text-xs font-semibold text-gray-700 mb-1">Till och med</label>
+              <input type="date" id="loanEndDate" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 focus:ring-blue-500">
+            </div>
+          </div>
+        </div>
+
+        <!-- Sektion 2: Beställarens uppgifter -->
+        <div class="mb-8 border-t border-gray-100 pt-6">
+          <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-address-card text-brandBlue"></i> 1. Beställare (Kontaktperson)
+          </h3>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <input type="text" id="ordererName" required oninput="syncSameRecipient()" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Ditt Namn *">
+            </div>
+            <div>
+              <input type="tel" id="ordererPhone" required oninput="syncSameRecipient()" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Telefon *">
+            </div>
+            <div>
+              <input type="email" id="ordererEmail" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500" placeholder="E-post *">
+            </div>
+          </div>
+        </div>
+
+        <!-- Sektion 3: Mottagare/Plats -->
+        <div class="mb-8 border-t border-gray-100 pt-6">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+              <i class="fa-solid fa-truck text-brandBlue"></i> 2. Leveransmottagare & Plats
+            </h3>
+            <label class="inline-flex items-center text-sm text-gray-600 cursor-pointer">
+              <input type="checkbox" id="sameAsOrderer" onchange="toggleSameRecipient(this)" class="rounded text-blue-600 focus:ring-blue-500 mr-2">
+              Mottagaren är samma som beställaren
+            </label>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input type="text" id="recipientName" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Mottagarens namn *">
+            <input type="tel" id="recipientPhone" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Telefon för avisering *">
+            <input type="text" id="deliveryAddress" required class="md:col-span-2 w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Leveransadress (eller plats för utlån) *">
+            <input type="text" id="zipCode" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Postnummer *">
+            <input type="text" id="city" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Ort *">
+          </div>
+        </div>
+
+        <!-- Sektion 4: Beskrivning -->
+        <div class="mb-8 border-t border-gray-100 pt-6">
+          <label class="block text-gray-700 font-semibold mb-2">Beskrivning / Ändamål</label>
+          <textarea id="description" rows="2" class="w-full border border-gray-300 rounded-lg p-3 text-gray-700 focus:ring-2 focus:ring-blue-500 placeholder-gray-400" placeholder="Vad ska materialet användas till?"></textarea>
+        </div>
+
+        <button type="submit" class="w-full bg-brandGreen hover:bg-green-700 text-white font-bold py-4 px-6 rounded-xl transition duration-200 shadow-md mb-8">
+          Skicka Beställning / Låneförfrågan
+        </button>
+      </form>
+
+      <!-- SEKTION 5: MINA BESTÄLLNINGAR & STATUS (Nytt för användaren) -->
+      <div class="border-t-2 border-dashed border-gray-200 pt-8 mt-10">
+        <h2 class="text-xl font-bold text-brandBlue mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-clock-rotate-left"></i> Mina skickade beställningar & status
+        </h2>
+        <div id="userOrdersList" class="space-y-4">
+          <!-- Visar skickade ordrar och vem på lagret som hanterat dem -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= VY 2: MATERIALANSVARIG ================= -->
+    <section id="adminView" class="hidden">
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b border-gray-200 pb-4">
+        <h1 class="text-2xl md:text-3xl font-bold text-brandBlue">Materialansvarig - Hantera lager & lånescheman</h1>
+        
+        <!-- Lagerpersonal inloggning (Nytt fält) -->
+        <div class="bg-blue-50 p-2 rounded-lg border border-blue-200 flex items-center gap-2 text-sm">
+          <span class="font-semibold text-brandBlue whitespace-nowrap"><i class="fa-solid fa-user-check"></i> Packas av:</span>
+          <input type="text" id="adminStaffName" value="Erik (Lageransvarig)" class="bg-white border border-gray-300 rounded px-2 py-1 font-semibold text-gray-800 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+      </div>
+      
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        <!-- Lager & Artiklar -->
+        <div class="border border-gray-200 rounded-xl p-5 bg-gray-50">
+          <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-boxes-stacked text-brandBlue"></i> Sortiment & Saldo
+          </h2>
+          
+          <div class="space-y-3 mb-6" id="adminInventoryList"></div>
+          <hr class="my-4 border-gray-200">
+          <div class="bg-white p-3 rounded-lg border border-gray-200">
+            <h3 class="text-sm font-bold text-gray-700 mb-2">Lägg till ny artikel</h3>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+              <input type="text" id="newItemName" placeholder="Artikelnamn" class="col-span-2 border border-gray-300 rounded p-2 text-sm">
+              <select id="newItemType" class="border border-gray-300 rounded p-2 text-sm">
+                <option value="consumable">Förbrukning (Gåva)</option>
+                <option value="loan">Låneartikel (Ska returneras)</option>
+              </select>
+              <input type="number" id="newItemStock" min="1" placeholder="Totalt antal" class="border border-gray-300 rounded p-2 text-sm">
+            </div>
+            <button onclick="addNewItem()" class="w-full bg-brandBlue text-white p-2 rounded text-sm font-semibold hover:bg-blue-900">Lägg till i lagret</button>
+          </div>
+        </div>
+
+        <!-- Inkomna Beställningar / Lån -->
+        <div class="border border-gray-200 rounded-xl p-5 bg-gray-50">
+          <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-clipboard-list text-brandBlue"></i> Inkomna Ordrar & Bokningar
+          </h2>
+          <div class="space-y-4 max-h-[600px] overflow-y-auto pr-1" id="ordersContainer"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================= KALENDER MODAL ================= -->
+  <div id="calendarModal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-50 p-4 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
+      
+      <!-- Modal Header -->
+      <div class="p-4 bg-brandBlue text-white flex justify-between items-center">
+        <div>
+          <h2 id="calTitleName" class="text-xl font-bold">Låneschema</h2>
+          <p id="calTitleDetails" class="text-sm text-blue-200">Totalt X st i systemet</p>
+        </div>
+        <button onclick="closeCalendar()" class="text-white hover:text-red-300 text-2xl px-2">&times;</button>
+      </div>
+
+      <!-- Modal Body (Calendar) -->
+      <div class="p-4 md:p-6 overflow-y-auto">
+        
+        <!-- Controls -->
+        <div class="flex justify-between items-center mb-4">
+          <button onclick="changeMonth(-1)" class="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold"><i class="fa-solid fa-chevron-left"></i> Föregående</button>
+          <h3 id="calMonthYear" class="text-lg font-bold text-gray-800">Juni 2026</h3>
+          <button onclick="changeMonth(1)" class="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold">Nästa <i class="fa-solid fa-chevron-right"></i></button>
+        </div>
+
+        <!-- Grid Header -->
+        <div class="grid grid-cols-7 gap-1 mb-1 text-center font-semibold text-gray-600 text-sm">
+          <div>Mån</div><div>Tis</div><div>Ons</div><div>Tor</div><div>Fre</div><div class="text-red-500">Lör</div><div class="text-red-500">Sön</div>
+        </div>
+        
+        <!-- Calendar Grid -->
+        <div id="calendarGrid" class="grid grid-cols-7 gap-1">
+          <!-- Genereras av JS -->
+        </div>
+
+        <!-- Färgförklaring -->
+        <div class="flex gap-4 mt-4 justify-center text-xs text-gray-600">
+          <span class="flex items-center gap-1"><div class="w-3 h-3 bg-green-100 border border-green-300"></div> Helt ledig</span>
+          <span class="flex items-center gap-1"><div class="w-3 h-3 bg-yellow-100 border border-yellow-300"></div> Delvis utlånad</span>
+          <span class="flex items-center gap-1"><div class="w-3 h-3 bg-red-100 border border-red-300"></div> Fullbokad / Slut</span>
+        </div>
+
+        <!-- Specifika bokningar (Visas tydligt för Admin, men användare ser en enklare vy) -->
+        <div id="calAdminDetails" class="mt-8 border-t border-gray-200 pt-4 hidden">
+          <h4 class="font-bold text-gray-800 mb-3"><i class="fa-solid fa-map-location-dot"></i> Aktiva & Framtida Bokningar</h4>
+          <div id="calBookingsList" class="space-y-2">
+            <!-- Listas här -->
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // -------------------------------------------------------------------------
+    // DATA & STATE (Juni 2026)
+    // -------------------------------------------------------------------------
+    
+    let inventory = [
+      { id: 'kepsar', name: 'Kepsar (Val 2026)', stock: 45, type: 'consumable' },
+      { id: 'talt', name: 'Tält 3x3m (Profil)', stock: 3, type: 'loan' },
+      { id: 'beachflaggor', name: 'Beachflaggor', stock: 5, type: 'loan' },
+      { id: 'pennor', name: 'Pennor (Pack)', stock: 150, type: 'consumable' }
+    ];
+
+    const SYSTEM_DATE = new Date('2026-06-04T12:00:00');
+
+    // Ordrar (Nu med fält för status, vem som packat samt packdatum)
+    let orders = [
+      {
+        id: 1001,
+        date: '2026-06-02 10:15',
+        status: 'Hanterad', // En redan färdigpackad order
+        handledBy: 'Karin (Lagerchef)',
+        handledAt: '2026-06-02 11:30',
+        description: 'Förberedelse inför sommarturnén.',
+        items: [
+          { name: 'Kepsar (Val 2026)', quantity: 5 }
+        ],
+        orderer: { name: 'Sven Planerare', phone: '073-444 55 66' },
+        delivery: { name: 'Sven Planerare', address: 'Kungsgatan 4', city: 'Uppsala', phone: '073-444 55 66' }
+      },
+      {
+        id: 1002,
+        date: '2026-06-03 14:22',
+        status: 'Mottagen', // Väntar på hantering
+        handledBy: null,
+        handledAt: null,
+        description: 'Behöver material till torgmötet på lördag.',
+        deadline: '2026-06-05',
+        items: [
+          { name: 'Tält 3x3m (Profil)', quantity: 1 },
+          { name: 'Beachflaggor', quantity: 2 }
+        ],
+        orderer: { name: 'Fredrik Kampanjledare', phone: '070-999 88 77' },
+        delivery: { name: 'Anna Andersson (Volontär)', address: 'Stortorget, Stockholm', city: 'Stockholm', phone: '070-111 22 33' },
+        loanStart: '2026-06-02',
+        loanEnd: '2026-06-08'
+      }
+    ];
+
+    // Bokningar specifikt för låneartiklar
+    let bookings = [
+      {
+        id: 101,
+        itemId: 'talt',
+        startDate: '2026-06-02', 
+        endDate: '2026-06-08',   
+        quantity: 1,
+        recipient: {
+          name: 'Anna Andersson (Volontär)',
+          address: 'Stortorget, Stockholm',
+          phone: '070-111 22 33'
+        }
+      }
+    ];
+
+    let currentView = 'user'; 
+    let selectedCalItem = null;
+    let calViewYear = 2026;
+    let calViewMonth = 5; // Juni
+
+    // -------------------------------------------------------------------------
+    // RENDERINGS-LOGIK 
+    // -------------------------------------------------------------------------
+
+    function toggleView() {
+      const userViewEl = document.getElementById('userView');
+      const adminViewEl = document.getElementById('adminView');
+      const toggleBtnText = document.getElementById('toggleButtonText');
+
+      if (currentView === 'user') {
+        currentView = 'admin';
+        userViewEl.classList.add('hidden');
+        adminViewEl.classList.remove('hidden');
+        toggleBtnText.innerHTML = 'Växla till Beställare';
+      } else {
+        currentView = 'user';
+        adminViewEl.classList.add('hidden');
+        userViewEl.classList.remove('hidden');
+        toggleBtnText.innerHTML = 'Växla till Materialansvarig';
+      }
+      render();
+    }
+
+    function render() {
+      renderInventoryTable();
+      renderAdminInventory();
+      renderOrders();
+      renderUserOrdersStatus(); // Uppdaterar beställarens orderlista
+    }
+
+    function renderInventoryTable() {
+      const tbody = document.getElementById('inventoryTableBody');
+      tbody.innerHTML = '';
+
+      inventory.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.className = 'border-b border-gray-200 hover:bg-gray-50';
+
+        let typeBadge = item.type === 'loan' 
+          ? `<span class="px-2 py-1 bg-purple-100 text-purple-800 text-[10px] uppercase font-bold rounded">Låneartikel</span>`
+          : `<span class="px-2 py-1 bg-gray-100 text-gray-700 text-[10px] uppercase font-bold rounded">Förbrukning</span>`;
+
+        let stockBadgeColor = item.stock === 0 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800';
+
+        let calButton = item.type === 'loan'
+          ? `<button type="button" onclick="openCalendar('${item.id}')" class="text-brandBlue hover:text-blue-600 font-medium text-sm flex items-center justify-end gap-1 w-full"><i class="fa-regular fa-calendar"></i> Schema</button>`
+          : `<span class="text-xs text-gray-400 italic">Ej tillämpligt</span>`;
+
+        tr.innerHTML = `
+          <td class="p-3 text-sm font-medium text-gray-800">${item.name}</td>
+          <td class="p-3">${typeBadge}</td>
+          <td class="p-3 text-center">
+            <span class="inline-block px-2.5 py-1 rounded-full text-xs font-bold ${stockBadgeColor}">
+              ${item.stock} st
+            </span>
+          </td>
+          <td class="p-3 text-right pr-4">${calButton}</td>
+          <td class="p-3 text-right">
+            <input type="number" 
+                   id="qty-${item.id}" 
+                   min="0" 
+                   max="${item.stock}" 
+                   value="0" 
+                   oninput="checkLoanRequirements()"
+                   class="w-16 border border-gray-300 rounded p-1 text-center text-sm focus:ring-2 focus:ring-blue-500"
+                   ${item.stock === 0 ? 'disabled placeholder="0"' : ''}>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+      checkLoanRequirements();
+    }
+
+    function renderAdminInventory() {
+      const listContainer = document.getElementById('adminInventoryList');
+      listContainer.innerHTML = '';
+
+      inventory.forEach(item => {
+        const isLoan = item.type === 'loan';
+        const div = document.createElement('div');
+        div.className = 'flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200 shadow-sm';
+        
+        let actions = isLoan ? `
+          <button onclick="openCalendar('${item.id}')" class="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-2 py-1 rounded font-bold mr-2"><i class="fa-regular fa-calendar"></i> Schema</button>
+        ` : '';
+
+        div.innerHTML = `
+          <div>
+            <span class="font-medium text-gray-700 block">${item.name}</span>
+            <span class="text-[10px] text-gray-400 uppercase">${isLoan ? 'Låneartikel' : 'Förbrukning'}</span>
+          </div>
+          <div class="flex items-center gap-1">
+            ${actions}
+            <button onclick="adjustStock('${item.id}', -1)" class="w-7 h-7 rounded bg-gray-100 hover:bg-gray-200 font-bold">-</button>
+            <input type="number" value="${item.stock}" onchange="setStock('${item.id}', this.value)" class="w-12 text-center border border-gray-200 rounded p-1 text-sm font-bold">
+            <button onclick="adjustStock('${item.id}', 1)" class="w-7 h-7 rounded bg-gray-100 hover:bg-gray-200 font-bold">+</button>
+            <button onclick="deleteItem('${item.id}')" class="text-red-400 hover:text-red-600 ml-1"><i class="fa-regular fa-trash-can"></i></button>
+          </div>
+        `;
+        listContainer.appendChild(div);
+      });
+    }
+
+    // Materialansvariges vy över alla inkomna beställningar
+    function renderOrders() {
+      const container = document.getElementById('ordersContainer');
+      container.innerHTML = '';
+
+      if (orders.length === 0) {
+        container.innerHTML = '<p class="text-sm text-gray-500 italic">Inga inkomna beställningar ännu.</p>';
+        return;
+      }
+
+      orders.forEach(order => {
+        const div = document.createElement('div');
+        div.className = 'bg-white p-4 rounded-lg border border-gray-200 shadow-sm relative';
+        
+        let itemsHtml = order.items.map(i => `<li class="text-sm text-gray-600 font-medium">${i.name}: <span class="text-gray-900">${i.quantity} st</span></li>`).join('');
+
+        // Tidsperiod för lån
+        let periodHtml = '';
+        if (order.loanStart && order.loanEnd) {
+          periodHtml = `
+            <div class="mb-3 bg-purple-50 p-2 rounded border border-purple-100">
+              <span class="text-xs font-bold text-purple-800 uppercase"><i class="fa-regular fa-calendar"></i> Låneperiod:</span>
+              <span class="text-sm text-purple-900 ml-2 font-medium">${order.loanStart} till ${order.loanEnd}</span>
+            </div>`;
+        }
+
+        // Status-etikett & hanterings-knapp
+        let statusBadge = '';
+        let actionBtn = '';
+
+        if (order.status === 'Hanterad') {
+          statusBadge = `
+            <span class="px-2 py-1 text-xs font-bold rounded bg-green-100 text-green-800 flex items-center gap-1">
+              <i class="fa-solid fa-check"></i> Hanterad av ${order.handledBy} (${order.handledAt})
+            </span>`;
+        } else {
+          statusBadge = `
+            <span class="px-2 py-1 text-xs font-bold rounded bg-yellow-100 text-yellow-800 flex items-center gap-1">
+              <i class="fa-regular fa-clock"></i> Väntar på hantering
+            </span>`;
+          actionBtn = `
+            <button onclick="markAsHandled(${order.id})" class="w-full mt-4 bg-brandGreen hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-xs transition duration-150">
+              <i class="fa-solid fa-box-open"></i> Markera som packad & hanterad
+            </button>`;
+        }
+
+        div.innerHTML = `
+          <div class="flex justify-between items-center mb-3">
+            <span class="text-xs text-gray-400">Order ID: #${order.id} | ${order.date}</span>
+            ${statusBadge}
+          </div>
+
+          ${periodHtml}
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+            <div class="bg-gray-50 p-2.5 rounded border border-gray-200">
+              <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Beställare:</h4>
+              <p class="text-sm font-bold text-gray-800">${order.orderer.name}</p>
+              <p class="text-xs text-gray-600">${order.orderer.phone}</p>
+            </div>
+            <div class="bg-blue-50 p-2.5 rounded border border-blue-100">
+              <h4 class="text-xs font-bold text-brandBlue uppercase tracking-wider mb-1">Mottagare & Adress:</h4>
+              <p class="text-sm font-bold text-gray-950">${order.delivery.name}</p>
+              <p class="text-xs text-gray-700">${order.delivery.address}, ${order.delivery.city}</p>
+              <p class="text-xs text-gray-500 mt-1">${order.delivery.phone}</p>
+            </div>
+          </div>
+
+          <div class="mb-2">
+            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Innehåll:</h4>
+            <ul class="list-disc pl-4 space-y-0.5">${itemsHtml}</ul>
+          </div>
+
+          ${order.description ? `<p class="text-sm text-gray-700 italic border-t border-gray-100 pt-2 mt-2">"${order.description}"</p>` : ''}
+          
+          ${actionBtn}
+          
+          <button onclick="deleteOrder(${order.id})" class="absolute top-4 right-4 text-gray-300 hover:text-red-500 transition" title="Radera beställning">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // Beställarens egen orderstatus-lista (Visas i Beställarvyn längst ner)
+    function renderUserOrdersStatus() {
+      const container = document.getElementById('userOrdersList');
+      container.innerHTML = '';
+
+      if (orders.length === 0) {
+        container.innerHTML = '<p class="text-sm text-gray-500 italic">Du har inte skickat några beställningar under denna session.</p>';
+        return;
+      }
+
+      orders.forEach(order => {
+        const div = document.createElement('div');
+        div.className = 'bg-gray-50 border border-gray-200 rounded-lg p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4';
+        
+        let itemsSummary = order.items.map(i => `${i.name} (${i.quantity} st)`).join(', ');
+
+        let statusText = '';
+        if (order.status === 'Hanterad') {
+          statusText = `
+            <div class="text-right">
+              <span class="inline-flex items-center gap-1 text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded-full">
+                <i class="fa-solid fa-check-circle"></i> Packad & Skickad
+              </span>
+              <p class="text-[11px] text-gray-500 mt-1">Utfört av: <span class="font-bold text-gray-700">${order.handledBy}</span> kl ${order.handledAt.slice(11)}</p>
+            </div>`;
+        } else {
+          statusText = `
+            <div class="text-right">
+              <span class="inline-flex items-center gap-1 text-xs font-bold text-yellow-700 bg-yellow-100 px-2 py-1 rounded-full">
+                <i class="fa-regular fa-clock"></i> Mottagen - Väntar på hantering
+              </span>
+              <p class="text-[11px] text-gray-400 mt-1">Behandlas inom kort av lageransvarig</p>
+            </div>`;
+        }
+
+        div.innerHTML = `
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-sm font-bold text-gray-800">Order #${order.id}</span>
+              <span class="text-xs text-gray-400">${order.date}</span>
+            </div>
+            <p class="text-xs text-gray-600"><span class="font-semibold">Artiklar:</span> ${itemsSummary}</p>
+            <p class="text-xs text-gray-600"><span class="font-semibold">Mottagare:</span> ${order.delivery.name} (${order.delivery.city})</p>
+          </div>
+          ${statusText}
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // AKTIVERA OCH INTEGRERA LAGERPERSONAL (Packas av...)
+    // -------------------------------------------------------------------------
+    
+    // Markera order som packad & hanterad
+    window.markAsHandled = function(orderId) {
+      const order = orders.find(o => o.id === orderId);
+      if (order) {
+        // Hämta namnet på den inloggade personalen
+        const staffNameInput = document.getElementById('adminStaffName');
+        const staffName = staffNameInput ? staffNameInput.value.trim() : 'Lageransvarig';
+        
+        if (!staffName) {
+          alert('Vänligen fyll i vem som utför beställningen (Packas av) överst i panelen.');
+          return;
+        }
+
+        order.status = 'Hanterad';
+        order.handledBy = staffName;
+        
+        // Sätt hanteringstidpunkt till nuvarande (Juni 2026 i demot)
+        const now = new Date();
+        order.handledAt = '2026-06-04 ' + now.toTimeString().slice(0, 5);
+
+        alert(`Order #${order.id} har markerats som packad och godkänd av ${staffName}!`);
+        render();
+      }
+    };
+
+    // -------------------------------------------------------------------------
+    // TIDIGARE KALENDER- & BOKNINGSLOGIK (INTAKT)
+    // -------------------------------------------------------------------------
+
+    function checkLoanRequirements() {
+      const section = document.getElementById('loanPeriodSection');
+      const startInput = document.getElementById('loanStartDate');
+      const endInput = document.getElementById('loanEndDate');
+      let requiresLoanPeriod = false;
+
+      inventory.forEach(item => {
+        if (item.type === 'loan') {
+          const qtyInput = document.getElementById(`qty-${item.id}`);
+          if (qtyInput && parseInt(qtyInput.value) > 0) {
+            requiresLoanPeriod = true;
+          }
+        }
+      });
+
+      if (requiresLoanPeriod) {
+        section.classList.remove('hidden');
+        startInput.setAttribute('required', 'true');
+        endInput.setAttribute('required', 'true');
+      } else {
+        section.classList.add('hidden');
+        startInput.removeAttribute('required');
+        endInput.removeAttribute('required');
+      }
+    }
+
+    function getBookedQtyOnDate(itemId, dateObj) {
+      let count = 0;
+      const targetTime = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 12, 0, 0).getTime();
+      
+      bookings.forEach(b => {
+        if (b.itemId === itemId) {
+          const sObj = new Date(b.startDate);
+          const eObj = new Date(b.endDate);
+          const start = new Date(sObj.getFullYear(), sObj.getMonth(), sObj.getDate(), 0, 0, 0).getTime();
+          const end = new Date(eObj.getFullYear(), eObj.getMonth(), eObj.getDate(), 23, 59, 59).getTime();
+          
+          if (targetTime >= start && targetTime <= end) {
+            count += b.quantity;
+          }
+        }
+      });
+      return count;
+    }
+
+    function openCalendar(itemId) {
+      selectedCalItem = inventory.find(i => i.id === itemId);
+      calViewYear = 2026;
+      calViewMonth = 5; 
+      
+      document.getElementById('calTitleName').innerText = `Låneschema: ${selectedCalItem.name}`;
+      document.getElementById('calTitleDetails').innerText = `Totalt ${selectedCalItem.stock} st tillgängliga i systemet`;
+      
+      document.getElementById('calendarModal').classList.remove('hidden');
+      document.getElementById('calendarModal').classList.add('flex');
+      
+      if (currentView === 'admin') {
+        document.getElementById('calAdminDetails').classList.remove('hidden');
+      } else {
+        document.getElementById('calAdminDetails').classList.add('hidden');
+      }
+
+      renderCalendarGrid();
+    }
+
+    function closeCalendar() {
+      document.getElementById('calendarModal').classList.add('hidden');
+      document.getElementById('calendarModal').classList.remove('flex');
+    }
+
+    function changeMonth(dir) {
+      calViewMonth += dir;
+      if (calViewMonth > 11) { calViewMonth = 0; calViewYear++; }
+      if (calViewMonth < 0) { calViewMonth = 11; calViewYear--; }
+      renderCalendarGrid();
+    }
+
+    function renderCalendarGrid() {
+      const monthNames = ["Januari", "Februari", "Mars", "April", "Maj", "Juni", "Juli", "Augusti", "September", "Oktober", "November", "December"];
+      document.getElementById('calMonthYear').innerText = `${monthNames[calViewMonth]} ${calViewYear}`;
+
+      const grid = document.getElementById('calendarGrid');
+      grid.innerHTML = '';
+
+      const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
+      let firstDayIndex = new Date(calViewYear, calViewMonth, 1).getDay() - 1; 
+      if (firstDayIndex === -1) firstDayIndex = 6; 
+
+      for(let i=0; i<firstDayIndex; i++) {
+        grid.innerHTML += `<div class="p-2 border border-transparent"></div>`;
+      }
+
+      for(let day=1; day<=daysInMonth; day++) {
+        const currentLoopDate = new Date(calViewYear, calViewMonth, day);
+        const bookedQty = getBookedQtyOnDate(selectedCalItem.id, currentLoopDate);
+        const totalStock = selectedCalItem.stock;
+
+        let bgColor = 'bg-white';
+        let borderColor = 'border-gray-200';
+        let textColor = 'text-gray-800';
+        let subText = 'Ledig';
+
+        if (bookedQty >= totalStock) {
+          bgColor = 'bg-red-50';
+          borderColor = 'border-red-300';
+          textColor = 'text-red-800';
+          subText = 'Fullbokad';
+        } else if (bookedQty > 0) {
+          bgColor = 'bg-yellow-50';
+          borderColor = 'border-yellow-300';
+          textColor = 'text-yellow-800';
+          subText = `${totalStock - bookedQty} kvar`;
+        } else {
+          bgColor = 'bg-green-50';
+          borderColor = 'border-green-300';
+          textColor = 'text-green-800';
+        }
+
+        const isToday = currentLoopDate.toDateString() === SYSTEM_DATE.toDateString();
+        const todayStyle = isToday ? 'ring-2 ring-blue-600 ring-inset font-black' : '';
+
+        grid.innerHTML += `
+          <div class="flex flex-col items-center justify-center p-1 sm:p-2 border rounded ${bgColor} ${borderColor} ${todayStyle} min-h-[60px]">
+            <span class="text-sm md:text-base ${textColor}">${day}</span>
+            <span class="text-[9px] md:text-[10px] ${textColor} font-semibold uppercase">${subText}</span>
+          </div>
+        `;
+      }
+
+      const listDiv = document.getElementById('calBookingsList');
+      listDiv.innerHTML = '';
+      
+      const itemBookings = bookings.filter(b => b.itemId === selectedCalItem.id);
+      if (itemBookings.length === 0) {
+        listDiv.innerHTML = '<p class="text-sm text-gray-500">Inga utlån registrerade.</p>';
+      } else {
+        itemBookings.forEach(b => {
+          listDiv.innerHTML += `
+            <div class="bg-gray-50 border border-gray-200 rounded p-3 flex flex-col md:flex-row md:justify-between md:items-center text-sm">
+              <div>
+                <p class="font-bold text-gray-800">${b.startDate} <i class="fa-solid fa-arrow-right text-xs mx-1"></i> ${b.endDate}</p>
+                <p class="text-gray-600"><span class="font-semibold">Plats:</span> ${b.recipient.address} (${b.recipient.name})</p>
+              </div>
+              <div class="mt-2 md:mt-0 font-bold text-brandBlue bg-blue-100 px-3 py-1 rounded">
+                Antal: ${b.quantity} st
+              </div>
+            </div>
+          `;
+        });
+      }
+    }
+
+    window.handleOrderSubmit = function(event) {
+      event.preventDefault();
+
+      const orderedItems = [];
+      let loanStartStr = document.getElementById('loanStartDate').value;
+      let loanEndStr = document.getElementById('loanEndDate').value;
+      let hasLoanItem = false;
+
+      for (let item of inventory) {
+        const qtyInput = document.getElementById(`qty-${item.id}`);
+        const qty = parseInt(qtyInput ? qtyInput.value : 0) || 0;
+        
+        if (qty > 0) {
+          if (item.type === 'consumable') {
+            if (qty > item.stock) {
+              alert(`Du har valt fler ${item.name} än vad som finns i lagret!`);
+              return;
+            }
+          } else if (item.type === 'loan') {
+            hasLoanItem = true;
+            if (!loanStartStr || !loanEndStr) {
+              alert('Du måste välja start- och slutdatum för låneartiklar.');
+              return;
+            }
+            
+            const dS = new Date(loanStartStr);
+            const dE = new Date(loanEndStr);
+            let checkDate = new Date(dS.getTime());
+            
+            while(checkDate <= dE) {
+              const bookedAlready = getBookedQtyOnDate(item.id, checkDate);
+              if ((bookedAlready + qty) > item.stock) {
+                alert(`Tyvärr, den ${checkDate.toISOString().split('T')[0]} finns det inte tillräckligt många ${item.name} lediga. Kolla schemat!`);
+                return;
+              }
+              checkDate.setDate(checkDate.getDate() + 1);
+            }
+          }
+
+          orderedItems.push({
+            name: item.name,
+            id: item.id,
+            type: item.type,
+            quantity: qty
+          });
+        }
+      }
+
+      if (orderedItems.length === 0) {
+        alert('Vänligen välj minst en artikel.');
+        return;
+      }
+
+      const ordererInfo = {
+        name: document.getElementById('ordererName').value.trim(),
+        phone: document.getElementById('ordererPhone').value.trim(),
+        email: document.getElementById('ordererEmail').value.trim()
+      };
+      const recipientInfo = {
+        name: document.getElementById('recipientName').value.trim(),
+        phone: document.getElementById('recipientPhone').value.trim(),
+        address: document.getElementById('deliveryAddress').value.trim(),
+        city: document.getElementById('city').value.trim()
+      };
+
+      orderedItems.forEach(ordered => {
+        if (ordered.type === 'consumable') {
+          const item = inventory.find(i => i.id === ordered.id);
+          item.stock -= ordered.quantity;
+        } else if (ordered.type === 'loan') {
+          bookings.push({
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            itemId: ordered.id,
+            startDate: loanStartStr,
+            endDate: loanEndStr,
+            quantity: ordered.quantity,
+            recipient: recipientInfo
+          });
+        }
+      });
+
+      const newOrder = {
+        id: Date.now().toString().slice(-4), // Förenklat 4-siffrigt ID för skärmen
+        date: '2026-06-04 ' + SYSTEM_DATE.toTimeString().slice(0, 5),
+        status: 'Mottagen',
+        handledBy: null,
+        handledAt: null,
+        description: document.getElementById('description').value,
+        items: orderedItems,
+        orderer: ordererInfo,
+        delivery: recipientInfo,
+        loanStart: hasLoanItem ? loanStartStr : null,
+        loanEnd: hasLoanItem ? loanEndStr : null
+      };
+
+      orders.unshift(newOrder);
+
+      document.getElementById('orderForm').reset();
+      const checkbox = document.getElementById('sameAsOrderer');
+      if (checkbox) {
+        checkbox.checked = false;
+        toggleSameRecipient(checkbox);
+      }
+      
+      checkLoanRequirements();
+      alert(`Förfrågan inskickad! Följ statusen på din order under 'Mina skickade beställningar' längst ner.`);
+      render();
+    };
+
+    window.toggleSameRecipient = function(checkbox) {
+      const recipientName = document.getElementById('recipientName');
+      const recipientPhone = document.getElementById('recipientPhone');
+      if (checkbox.checked) {
+        recipientName.value = document.getElementById('ordererName').value;
+        recipientPhone.value = document.getElementById('ordererPhone').value;
+        recipientName.setAttribute('readonly', 'true');
+        recipientPhone.setAttribute('readonly', 'true');
+        recipientName.classList.add('bg-gray-100', 'text-gray-500');
+        recipientPhone.classList.add('bg-gray-100', 'text-gray-500');
+      } else {
+        recipientName.removeAttribute('readonly');
+        recipientPhone.removeAttribute('readonly');
+        recipientName.classList.remove('bg-gray-100', 'text-gray-500');
+        recipientPhone.classList.remove('bg-gray-100', 'text-gray-500');
+      }
+    };
+
+    window.syncSameRecipient = function() {
+      const checkbox = document.getElementById('sameAsOrderer');
+      if (checkbox && checkbox.checked) {
+        document.getElementById('recipientName').value = document.getElementById('ordererName').value;
+        document.getElementById('recipientPhone').value = document.getElementById('ordererPhone').value;
+      }
+    };
+
+    window.adjustStock = function(id, change) {
+      const item = inventory.find(i => i.id === id);
+      if (item) { item.stock = Math.max(0, item.stock + change); render(); }
+    };
+    window.setStock = function(id, value) {
+      const item = inventory.find(i => i.id === id);
+      if (item) { item.stock = Math.max(0, parseInt(value) || 0); render(); }
+    };
+    window.deleteItem = function(id) {
+      if (confirm('Radera artikel?')) { inventory = inventory.filter(i => i.id !== id); render(); }
+    };
+    window.deleteOrder = function(id) {
+      orders = orders.filter(o => o.id !== id); render();
+    };
+    window.addNewItem = function() {
+      const name = document.getElementById('newItemName').value.trim();
+      const type = document.getElementById('newItemType').value;
+      const stock = parseInt(document.getElementById('newItemStock').value) || 0;
+      if (!name) return alert('Ange namn.');
+      const id = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      inventory.push({ id, name, stock, type });
+      render();
+    };
+
+    document.addEventListener('DOMContentLoaded', render);
+  </script>
+</body>
+</html>

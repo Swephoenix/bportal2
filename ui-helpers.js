@@ -110,7 +110,12 @@
 
     function shouldShowIncomingOrdersButton(currentUser, incomingOrders) {
         if (!currentUser || !Array.isArray(incomingOrders)) return false;
-        return incomingOrders.length > 0;
+        return getUserGroups(currentUser).length > 0 || incomingOrders.length > 0;
+    }
+
+    function getDepartmentOrderButtonLabel(department) {
+        const name = String(department || '').trim();
+        return `Avdelningsbeställningar (${name})`;
     }
 
     async function loadAdminUsersSequence(actions) {
@@ -149,6 +154,7 @@
     const api = {
         canAccessOrderChat,
         getDefaultOrderDeadline,
+        getDepartmentOrderButtonLabel,
         getOrderFormBackConfig,
         loadAdminUsersSequence,
         shouldShowIncomingOrdersButton,

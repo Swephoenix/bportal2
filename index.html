@@ -346,8 +346,26 @@
         }
         .as-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 1rem;
+        }
+        .as-workspace {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(20rem, 25rem);
+            align-items: start;
+            gap: 1.25rem;
+        }
+        .as-workspace .as-grid {
+            min-width: 0;
+        }
+        .as-ai-card {
+            position: sticky;
+            top: 1rem;
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+            border-radius: 1rem;
+            background: #ffffff;
+            box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
         }
         .as-card {
             background: #ffffff;
@@ -370,15 +388,15 @@
         }
         .as-card h3 {
             margin: 0 0 0.6rem;
-            font-size: 1rem;
+            font-size: 0.875rem;
             font-weight: 800;
             color: #0f172a;
         }
         .as-card p {
             margin: 0;
             color: #64748b;
-            font-size: 0.875rem;
-            line-height: 1.45;
+            font-size: 0.8125rem;
+            line-height: 1.4;
             max-width: 21.25rem;
         }
         .as-card .as-card-arrow {
@@ -624,6 +642,9 @@
             align-items: center;
             gap: 0.5rem;
         }
+        .as-ai-card .as-ai-floating-btn {
+            display: none;
+        }
         .as-ai-overlay {
             position: fixed;
             inset: 0;
@@ -649,6 +670,26 @@
             opacity: 0;
             pointer-events: none;
             transition: transform 0.2s ease, opacity 0.2s ease;
+        }
+        @media (min-width: 1024px) {
+            .as-ai-floating-btn,
+            .as-ai-overlay {
+                display: none;
+            }
+            .as-ai-popup {
+                position: static;
+                width: 100%;
+                max-width: none;
+                border: 0;
+                border-radius: 0;
+                box-shadow: none;
+                transform: none;
+                opacity: 1;
+                pointer-events: auto;
+            }
+            .as-ai-popup-header button {
+                display: none;
+            }
         }
         .as-ai-popup.is-open,
         .as-ai-overlay.is-open {
@@ -892,6 +933,21 @@
                 padding-bottom: 6.5rem;
                 align-content: start;
             }
+            .as-workspace {
+                display: block;
+                min-height: 0;
+            }
+            .as-ai-card {
+                position: static;
+                overflow: visible;
+                border: 0;
+                border-radius: 0;
+                background: transparent;
+                box-shadow: none;
+            }
+            .as-ai-card .as-ai-floating-btn {
+                display: flex;
+            }
             #dept-grid > button,
             #dept-grid > div {
                 padding: 1rem;
@@ -919,8 +975,8 @@
                 padding: 0.9rem 1rem;
             }
             #dept-grid.is-order-mode .as-card h3 {
-                font-size: 1rem;
-                line-height: 1.25rem;
+                font-size: 0.8125rem;
+                line-height: 1.15rem;
                 margin: 0;
                 overflow-wrap: anywhere;
             }
@@ -1339,35 +1395,39 @@
                 </button>
             </div>
         </div>
-        <div class="as-grid" id="dept-grid"></div>
-        <button class="as-ai-floating-btn" id="asOpenAi" type="button" onclick="openAIChatPopup()">
-            <span>🤖</span>
-            AI
-        </button>
-        <div class="as-ai-overlay" id="asAiOverlay" onclick="closeAIChatPopup()"></div>
-        <div class="as-ai-popup" id="asAiPopup" aria-label="AI-assistent">
-            <div class="as-ai-popup-header">
-                <div>
-                    <span class="as-ai-label">AI-assistent</span>
-                    <h2>Hitta rätt avdelning</h2>
-                    <span id="ai-status-badge" class="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
-                        <span class="h-2 w-2 rounded-full bg-slate-300"></span>
-                        Kontrollerar AI
-                    </span>
+        <div class="as-workspace">
+            <div class="as-grid" id="dept-grid"></div>
+            <aside class="as-ai-card" id="asAiCard">
+                <button class="as-ai-floating-btn" id="asOpenAi" type="button" onclick="openAIChatPopup()">
+                    <span>🤖</span>
+                    AI
+                </button>
+                <div class="as-ai-overlay" id="asAiOverlay" onclick="closeAIChatPopup()"></div>
+                <div class="as-ai-popup" id="asAiPopup" aria-label="AI-assistent">
+                    <div class="as-ai-popup-header">
+                        <div>
+                            <span class="as-ai-label">AI-assistent</span>
+                            <h2>Hitta rätt avdelning</h2>
+                            <span id="ai-status-badge" class="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">
+                                <span class="h-2 w-2 rounded-full bg-slate-300"></span>
+                                Kontrollerar AI
+                            </span>
+                        </div>
+                        <button id="asCloseAi" type="button" onclick="closeAIChatPopup()" aria-label="Stäng AI-assistent">×</button>
+                    </div>
+                    <div id="ai-chat-log" class="as-ai-chat space-y-4"></div>
+                    <div class="as-ai-suggestions">
+                        <button type="button" onclick="sendAIQuickPrompt('Flyer / banner')">Flyer / banner</button>
+                        <button type="button" onclick="sendAIQuickPrompt('IT-problem')">IT-problem</button>
+                        <button type="button" onclick="sendAIQuickPrompt('Valarbete')">Valarbete</button>
+                    </div>
+                    <form class="as-ai-form" onsubmit="sendAIMessage(event)">
+                        <input id="ai-chat-input" type="text" autocomplete="off" placeholder="Skriv till AI...">
+                        <button type="submit">Skicka</button>
+                        <button id="ai-stop-button" type="button" onclick="stopAIMessage()" class="hidden border border-rose-200 bg-white text-rose-600">Stoppa</button>
+                    </form>
                 </div>
-                <button id="asCloseAi" type="button" onclick="closeAIChatPopup()" aria-label="Stäng AI-assistent">×</button>
-            </div>
-            <div id="ai-chat-log" class="as-ai-chat space-y-4"></div>
-            <div class="as-ai-suggestions">
-                <button type="button" onclick="sendAIQuickPrompt('Flyer / banner')">Flyer / banner</button>
-                <button type="button" onclick="sendAIQuickPrompt('IT-problem')">IT-problem</button>
-                <button type="button" onclick="sendAIQuickPrompt('Valarbete')">Valarbete</button>
-            </div>
-            <form class="as-ai-form" onsubmit="sendAIMessage(event)">
-                <input id="ai-chat-input" type="text" autocomplete="off" placeholder="Skriv till AI...">
-                <button type="submit">Skicka</button>
-                <button id="ai-stop-button" type="button" onclick="stopAIMessage()" class="hidden border border-rose-200 bg-white text-rose-600">Stoppa</button>
-            </form>
+            </aside>
         </div>
     </section>
 
@@ -1379,6 +1439,18 @@
                 <button type="button" onclick="resolveDepartmentUnsavedModal('stay')" class="as-edit-btn as-cancel">Stanna kvar</button>
                 <button type="button" onclick="resolveDepartmentUnsavedModal('discard')" class="as-edit-btn as-cancel">Avfärda ändringar</button>
                 <button type="button" onclick="resolveDepartmentUnsavedModal('save')" class="as-edit-btn as-save">Spara</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="admin-users-unsaved-modal" class="department-unsaved-modal" role="dialog" aria-modal="true" aria-labelledby="admin-users-unsaved-title">
+        <div class="department-unsaved-dialog">
+            <h3 id="admin-users-unsaved-title">Du har osparade ändringar</h3>
+            <p>Du har gjort ändringar som inte är sparade. Vill du spara dem eller avfärda innan du lämnar sidan?</p>
+            <div class="department-unsaved-actions">
+                <button type="button" onclick="resolveAdminUsersUnsavedModal('stay')" class="as-edit-btn as-cancel">Stanna kvar</button>
+                <button type="button" onclick="resolveAdminUsersUnsavedModal('discard')" class="as-edit-btn as-cancel">Avfärda ändringar</button>
+                <button type="button" onclick="resolveAdminUsersUnsavedModal('save')" class="as-edit-btn as-save">Spara</button>
             </div>
         </div>
     </div>
@@ -1467,6 +1539,26 @@
                     <input type="hidden" id="zoom-meeting-date">
                     <input type="hidden" id="zoom-meeting-time">
                 </div>
+                <div id="lagret-order-fields" class="hidden space-y-4 rounded-xl border border-amber-100 bg-amber-50/40 p-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Artikel</label>
+                        <input type="text" id="lagret-article-name" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Vilken artikel vill du beställa?">
+                    </div>
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Antal</label>
+                            <input type="text" id="lagret-quantity" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="T.ex. 10, 50, 100">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Enhet <span class="text-gray-400 font-normal">(Valfritt)</span></label>
+                            <input type="text" id="lagret-unit" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="T.ex. st, par, set">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Övriga önskemål <span class="text-gray-400 font-normal">(Valfritt)</span></label>
+                        <textarea id="lagret-notes" rows="3" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Storlek, färg, leveransadress eller annat relevant."></textarea>
+                    </div>
+                </div>
                 <div>
                     <label id="order-files-label" class="block text-sm font-semibold text-gray-700 mb-2">Bifoga bilder eller filer <span class="text-gray-400 font-normal">(Valfritt)</span></label>
                     <input type="file" id="order-files" multiple class="w-full px-4 py-3 border border-dashed border-gray-300 rounded-xl bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none">
@@ -1488,6 +1580,184 @@
             <h2 class="text-3xl font-bold mb-2">Skickat!</h2>
             <p class="text-gray-600 mb-8">Beställningen har tagits emot.</p>
             <button onclick="showDashboard()" class="text-blue-600 font-semibold hover:underline">Återgå till menyn</button>
+        </div>
+    </section>
+
+    <!-- SIDA: LAGER / BESTÄLL ARTIKLAR -->
+    <section id="lagret-page" class="hidden">
+        <div class="max-w-5xl mx-auto px-4 py-6">
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+                <button onclick="closeLagretView()" class="text-blue-600 hover:text-blue-800 flex items-center gap-2 text-sm font-medium">
+                    <i class="fa-solid fa-arrow-left"></i> Tillbaka till avdelningar
+                </button>
+                <button id="lagretStaffBtn" onclick="toggleLagretView()" class="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-900 transition flex items-center gap-2 shadow">
+                    <i class="fa-solid fa-user-gear"></i>
+                    <span id="lagretToggleBtnText">Visa beställningar</span>
+                </button>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-10">
+                <!-- BESTÄLLARE-VY -->
+                <section id="lagretUserView" class="block">
+                    <h1 class="text-2xl md:text-3xl font-bold text-blue-800 mb-8">Beställning: Förbrukning & Lån</h1>
+
+                    <form id="lagretOrderForm" onsubmit="handleLagretOrderSubmit(event)">
+                        <div class="mb-6">
+                            <label class="block text-gray-700 font-semibold mb-3">Välj artiklar att beställa / låna</label>
+                            <div class="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-100 border-b border-gray-200">
+                                            <th class="p-3 text-sm font-semibold text-gray-600">Artikel</th>
+                                            <th class="p-3 text-sm font-semibold text-gray-600">Typ</th>
+                                            <th class="p-3 text-sm font-semibold text-gray-600 text-center">Tillgängligt totalt</th>
+                                            <th class="p-3 text-sm font-semibold text-gray-600 text-right">Schema</th>
+                                            <th class="p-3 text-sm font-semibold text-gray-600 text-right w-32">Antal</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="lagretInventoryTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div id="lagretLoanPeriodSection" class="mb-8 bg-blue-50 border border-blue-200 rounded-lg p-4 hidden">
+                            <h3 class="text-sm font-bold text-blue-800 mb-2 flex items-center gap-2">
+                                <i class="fa-regular fa-clock"></i> Låneperiod (Krävs för låneprodukter)
+                            </h3>
+                            <p class="text-xs text-gray-600 mb-3">Du har valt en eller flera låneartiklar. Vänligen ange vilka datum de ska lånas.</p>
+                            <div class="flex gap-4">
+                                <div class="flex-1">
+                                    <label class="block text-xs font-semibold text-gray-700 mb-1">Från och med</label>
+                                    <input type="date" id="lagretLoanStart" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div class="flex-1">
+                                    <label class="block text-xs font-semibold text-gray-700 mb-1">Till och med</label>
+                                    <input type="date" id="lagretLoanEnd" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 focus:ring-blue-500">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-8 border-t border-gray-100 pt-6">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-address-card text-blue-800"></i> 1. Beställare (Kontaktperson)
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div><input type="text" id="lagretOrdererName" required oninput="syncLagretRecipient()" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Ditt Namn *"></div>
+                                <div><input type="tel" id="lagretOrdererPhone" required oninput="syncLagretRecipient()" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Telefon *"></div>
+                                <div><input type="email" id="lagretOrdererEmail" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500" placeholder="E-post *"></div>
+                            </div>
+                        </div>
+
+                        <div class="mb-8 border-t border-gray-100 pt-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                                    <i class="fa-solid fa-truck text-blue-800"></i> 2. Leveransmottagare & Plats
+                                </h3>
+                                <label class="inline-flex items-center text-sm text-gray-600 cursor-pointer">
+                                    <input type="checkbox" id="lagretSameAsOrderer" onchange="toggleLagretSameRecipient(this)" class="rounded text-blue-600 focus:ring-blue-500 mr-2">
+                                    Mottagaren är samma som beställaren
+                                </label>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <input type="text" id="lagretRecipientName" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Mottagarens namn *">
+                                <input type="tel" id="lagretRecipientPhone" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Telefon för avisering *">
+                                <input type="text" id="lagretDeliveryAddress" required class="md:col-span-2 w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Leveransadress (eller plats för utlån) *">
+                                <input type="text" id="lagretZipCode" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Postnummer *">
+                                <input type="text" id="lagretCity" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Ort *">
+                            </div>
+                        </div>
+
+                        <div class="mb-8 border-t border-gray-100 pt-6">
+                            <label class="block text-gray-700 font-semibold mb-2">Beskrivning / Ändamål</label>
+                            <textarea id="lagretDescription" rows="2" class="w-full border border-gray-300 rounded-lg p-3 text-gray-700 focus:ring-2 focus:ring-blue-500 placeholder-gray-400" placeholder="Vad ska materialet användas till?"></textarea>
+                        </div>
+
+                        <button type="submit" class="w-full bg-green-700 hover:bg-green-800 text-white font-bold py-4 px-6 rounded-xl transition duration-200 shadow-md mb-8">
+                            Skicka Beställning / Låneförfrågan
+                        </button>
+                    </form>
+
+                    <div class="border-t-2 border-dashed border-gray-200 pt-8 mt-10">
+                        <h2 class="text-xl font-bold text-blue-800 mb-4 flex items-center gap-2">
+                            <i class="fa-solid fa-clock-rotate-left"></i> Mina skickade beställningar & status
+                        </h2>
+                        <div id="lagretUserOrdersList" class="space-y-4"></div>
+                    </div>
+                </section>
+
+                <!-- MATERIALANSVARIG-VY -->
+                <section id="lagretAdminView" class="hidden">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b border-gray-200 pb-4">
+                        <h1 class="text-2xl md:text-3xl font-bold text-blue-800">Materialansvarig - Hantera lager & lånescheman</h1>
+                        <div class="bg-blue-50 p-2 rounded-lg border border-blue-200 flex items-center gap-2 text-sm">
+                            <span class="font-semibold text-blue-800 whitespace-nowrap"><i class="fa-solid fa-user-check"></i> Packas av:</span>
+                            <input type="text" id="lagretAdminStaffName" value="Erik (Lageransvarig)" class="bg-white border border-gray-300 rounded px-2 py-1 font-semibold text-gray-800 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div class="border border-gray-200 rounded-xl p-5 bg-gray-50">
+                            <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-boxes-stacked text-blue-800"></i> Sortiment & Saldo
+                            </h2>
+                            <div class="space-y-3 mb-6" id="lagretAdminInventoryList"></div>
+                            <hr class="my-4 border-gray-200">
+                            <div class="bg-white p-3 rounded-lg border border-gray-200">
+                                <h3 class="text-sm font-bold text-gray-700 mb-2">Lägg till ny artikel</h3>
+                                <div class="grid grid-cols-2 gap-2 mb-2">
+                                    <input type="text" id="lagretNewItemName" placeholder="Artikelnamn" class="col-span-2 border border-gray-300 rounded p-2 text-sm">
+                                    <select id="lagretNewItemType" class="border border-gray-300 rounded p-2 text-sm">
+                                        <option value="consumable">Förbrukning (Gåva)</option>
+                                        <option value="loan">Låneartikel (Ska returneras)</option>
+                                    </select>
+                                    <input type="number" id="lagretNewItemStock" min="1" placeholder="Totalt antal" class="border border-gray-300 rounded p-2 text-sm">
+                                </div>
+                                <button onclick="lagretAddNewItem()" class="w-full bg-blue-800 text-white p-2 rounded text-sm font-semibold hover:bg-blue-900">Lägg till i lagret</button>
+                            </div>
+                        </div>
+
+                        <div class="border border-gray-200 rounded-xl p-5 bg-gray-50">
+                            <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-clipboard-list text-blue-800"></i> Inkomna Ordrar & Bokningar
+                            </h2>
+                            <div class="space-y-4 max-h-[600px] overflow-y-auto pr-1" id="lagretOrdersContainer"></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- KALENDER MODAL -->
+        <div id="lagretCalendarModal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-50 p-4 backdrop-blur-sm">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div class="p-4 bg-blue-800 text-white flex justify-between items-center">
+                    <div>
+                        <h2 id="lagretCalTitleName" class="text-xl font-bold">Låneschema</h2>
+                        <p id="lagretCalTitleDetails" class="text-sm text-blue-200"></p>
+                    </div>
+                    <button onclick="lagretCloseCalendar()" class="text-white hover:text-red-300 text-2xl px-2">&times;</button>
+                </div>
+                <div class="p-4 md:p-6 overflow-y-auto">
+                    <div class="flex justify-between items-center mb-4">
+                        <button onclick="lagretChangeMonth(-1)" class="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold"><i class="fa-solid fa-chevron-left"></i> Föregående</button>
+                        <h3 id="lagretCalMonthYear" class="text-lg font-bold text-gray-800"></h3>
+                        <button onclick="lagretChangeMonth(1)" class="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold">Nästa <i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                    <div class="grid grid-cols-7 gap-1 mb-1 text-center font-semibold text-gray-600 text-sm">
+                        <div>Mån</div><div>Tis</div><div>Ons</div><div>Tor</div><div>Fre</div><div class="text-red-500">Lör</div><div class="text-red-500">Sön</div>
+                    </div>
+                    <div id="lagretCalendarGrid" class="grid grid-cols-7 gap-1"></div>
+                    <div class="flex gap-4 mt-4 justify-center text-xs text-gray-600">
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 bg-green-50 border border-green-300 inline-block"></span> Helt ledig</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 bg-yellow-50 border border-yellow-300 inline-block"></span> Delvis utlånad</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-3 bg-red-50 border border-red-300 inline-block"></span> Fullbokad / Slut</span>
+                    </div>
+                    <div id="lagretCalAdminDetails" class="mt-8 border-t border-gray-200 pt-4 hidden">
+                        <h4 class="font-bold text-gray-800 mb-3"><i class="fa-solid fa-map-location-dot"></i> Aktiva & Framtida Bokningar</h4>
+                        <div id="lagretCalBookingsList" class="space-y-2"></div>
+                    </div>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -1583,6 +1853,10 @@
             <button onclick="syncStaffFromAmbCentral()" class="inline-flex items-center gap-2 bg-indigo-600 text-white font-semibold px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition shadow-md text-sm">
                 <i class="fas fa-sync"></i>
                 Synkronisera personal
+            </button>
+            <button onclick="seedDemoUsers()" class="inline-flex items-center gap-2 bg-amber-500 text-white font-semibold px-5 py-2.5 rounded-xl hover:bg-amber-600 transition shadow-md text-sm">
+                <i class="fas fa-flask"></i>
+                Skapa demousers
             </button>
         </div>
         <div class="grid gap-6">
@@ -1993,6 +2267,7 @@
             "Beställa broschyrer",
             "Grafikgruppen",
             "Boka zoom-möte",
+            "Lagret",
             "Medlemsutskick",
             "Medlemsregister",
             "IT-support / Mjukvara",
@@ -2011,6 +2286,7 @@
             "Beställa broschyrer": "Beställningar av broschyrer, trycksaker, foldrar och informationsmaterial.",
             "Grafikgruppen": "Grafik, bilder, design, affischer, banners, layout, logotyper och visuellt material.",
             "Boka zoom-möte": "Bokning och planering av digitala möten i Zoom.",
+            "Lagret": "Beställning av profilartiklar, kontorsmaterial, broschyrer och övriga fysiska artiklar från lagret.",
             "Medlemsutskick": "Utskick till medlemmar, nyhetsbrev, medlemskommunikation och massutskick.",
             "Medlemsregister": "Medlemsuppgifter, register, adressändringar, medlemsdata och registerfrågor.",
             "IT-support / Mjukvara": "Datorproblem, inloggning, lösenord, e-post, skrivare, Teams, Office och mjukvara.",
@@ -2033,7 +2309,7 @@
             ? window.__BPORTAL_CONFIG__.apiBase
             : (window.location.protocol === 'file:' ? 'http://localhost:3001' : '');
         const AUTH_STORAGE_KEY = 'bportal_current_user_v1';
-        const PROTECTED_DEPARTMENT_NAMES = ['Grafikgruppen', 'Boka zoom-möte'];
+        const PROTECTED_DEPARTMENT_NAMES = ['Grafikgruppen', 'Boka zoom-möte', 'Lagret'];
         const MAX_ATTACHMENTS = 5;
         const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024;
         const BportalUI = window.BportalUI || {
@@ -2053,7 +2329,16 @@
                 });
             },
             shouldShowIncomingOrdersButton(user, incomingOrders) {
-                return Boolean(user && Array.isArray(incomingOrders) && incomingOrders.length > 0);
+                if (!user || !Array.isArray(incomingOrders)) return false;
+                const groups = [
+                    ...(Array.isArray(user.groups) ? user.groups : []),
+                    user.group,
+                ].map((group) => String(group || '').trim()).filter(Boolean);
+                return groups.length > 0 || incomingOrders.length > 0;
+            },
+            getDepartmentOrderButtonLabel(department) {
+                const name = String(department || '').trim();
+                return `Avdelningsbeställningar (${name})`;
             },
             canAccessOrderChat(order, user) {
                 if (!order || !user) return false;
@@ -2158,6 +2443,8 @@
         let adminUsers = [];
         let adminUsersExpanded = new Set();
         let adminEditingUsername = "";
+        let adminUsersUnsavedResolver = null;
+        let adminUserModalInitial = null;
         let impersonatedBy = null;
         let impersonatedBySettings = null;
         let currentAccessToken = "";
@@ -2480,6 +2767,10 @@
             return currentDeptTarget === 'Boka zoom-möte';
         }
 
+        function isLagretOrderTarget() {
+            return currentDeptTarget === 'Lagret';
+        }
+
         function parseDateInputValue(value) {
             const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
             if (!match) return null;
@@ -2681,6 +2972,467 @@
             document.getElementById('zoom-meeting-calendar').classList.toggle('hidden', !visible);
         }
 
+        function setLagretOrderFieldsVisible(visible) {
+            document.getElementById('lagret-order-fields').classList.toggle('hidden', !visible);
+        }
+
+        function getArticleRequest() {
+            return {
+                articleName: document.getElementById('lagret-article-name').value.trim(),
+                quantity: document.getElementById('lagret-quantity').value.trim(),
+                unit: document.getElementById('lagret-unit').value.trim(),
+                notes: document.getElementById('lagret-notes').value.trim(),
+            };
+        }
+
+        function resetArticleOrderFields() {
+            ['lagret-article-name', 'lagret-quantity', 'lagret-unit', 'lagret-notes'].forEach((id) => {
+                document.getElementById(id).value = '';
+            });
+        }
+
+        function buildArticleOrderMessage(articleRequest, fallbackMessage) {
+            if (!articleRequest) return fallbackMessage;
+            const lines = [
+                articleRequest.articleName ? `Artikel: ${articleRequest.articleName}` : '',
+                articleRequest.quantity ? `Antal: ${articleRequest.quantity}${articleRequest.unit ? ` ${articleRequest.unit}` : ''}` : '',
+                articleRequest.notes ? `Övrigt: ${articleRequest.notes}` : '',
+                fallbackMessage ? `Anteckning: ${fallbackMessage}` : '',
+            ].filter(Boolean);
+            return lines.join('\n');
+        }
+
+        // ---- LAGRET / WAREHOUSE VIEW ----
+        let lagretInventory = [
+            { id: 'kepsar', name: 'Kepsar (Val 2026)', stock: 45, type: 'consumable' },
+            { id: 'talt', name: 'Tält 3x3m (Profil)', stock: 3, type: 'loan' },
+            { id: 'beachflaggor', name: 'Beachflaggor', stock: 5, type: 'loan' },
+            { id: 'pennor', name: 'Pennor (Pack)', stock: 150, type: 'consumable' }
+        ];
+        let lagretOrders = [];
+        let lagretBookings = [];
+        let lagretViewMode = 'user';
+        let lagretSelectedCalItem = null;
+        const lagretSystemDate = new Date();
+        let lagretCalViewYear = lagretSystemDate.getFullYear();
+        let lagretCalViewMonth = lagretSystemDate.getMonth();
+
+        function isCurrentUserLagretStaff() {
+            if (!currentUser) return false;
+            if (currentUser.role === 'admin') return true;
+            const groups = Array.isArray(currentUser.groups) ? currentUser.groups : [];
+            if (groups.includes('Lagret')) return true;
+            return String(currentUser.group || '').trim() === 'Lagret';
+        }
+
+        function openLagretView() {
+            currentDeptTarget = 'Lagret';
+            lagretViewMode = 'user';
+            document.getElementById('lagretUserView').classList.remove('hidden');
+            document.getElementById('lagretAdminView').classList.add('hidden');
+            document.getElementById('lagretToggleBtnText').textContent = 'Visa beställningar';
+            document.getElementById('lagretStaffBtn').classList.toggle('hidden', !isCurrentUserLagretStaff());
+            showPage('lagret-page');
+            lagretRender();
+        }
+
+        function closeLagretView() {
+            showPage('select-department');
+        }
+
+        function toggleLagretView() {
+            const userView = document.getElementById('lagretUserView');
+            const adminView = document.getElementById('lagretAdminView');
+            const btnText = document.getElementById('lagretToggleBtnText');
+            if (lagretViewMode === 'user') {
+                lagretViewMode = 'admin';
+                userView.classList.add('hidden');
+                adminView.classList.remove('hidden');
+                btnText.textContent = 'Tillbaka till beställning';
+            } else {
+                lagretViewMode = 'user';
+                adminView.classList.add('hidden');
+                userView.classList.remove('hidden');
+                btnText.textContent = 'Visa beställningar';
+            }
+            lagretRender();
+        }
+
+        function lagretRender() {
+            lagretRenderInventoryTable();
+            lagretRenderAdminInventory();
+            lagretRenderOrders();
+            lagretRenderUserOrdersStatus();
+        }
+
+        function lagretRenderInventoryTable() {
+            const tbody = document.getElementById('lagretInventoryTableBody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            lagretInventory.forEach((item) => {
+                const tr = document.createElement('tr');
+                tr.className = 'border-b border-gray-200 hover:bg-gray-50';
+                const typeBadge = item.type === 'loan'
+                    ? '<span class="px-2 py-1 bg-purple-100 text-purple-800 text-[10px] uppercase font-bold rounded">Låneartikel</span>'
+                    : '<span class="px-2 py-1 bg-gray-100 text-gray-700 text-[10px] uppercase font-bold rounded">Förbrukning</span>';
+                const stockBadgeColor = item.stock === 0 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800';
+                const calButton = item.type === 'loan'
+                    ? `<button type="button" onclick="lagretOpenCalendar('${item.id}')" class="text-blue-800 hover:text-blue-600 font-medium text-sm flex items-center justify-end gap-1 w-full"><i class="fa-regular fa-calendar"></i> Schema</button>`
+                    : '<span class="text-xs text-gray-400 italic">Ej tillämpligt</span>';
+                tr.innerHTML = `
+                    <td class="p-3 text-sm font-medium text-gray-800">${escapeHtml(item.name)}</td>
+                    <td class="p-3">${typeBadge}</td>
+                    <td class="p-3 text-center"><span class="inline-block px-2.5 py-1 rounded-full text-xs font-bold ${stockBadgeColor}">${item.stock} st</span></td>
+                    <td class="p-3 text-right pr-4">${calButton}</td>
+                    <td class="p-3 text-right"><input type="number" id="lagret-qty-${item.id}" min="0" max="${item.stock}" value="0" oninput="lagretCheckLoanRequirements()" class="w-16 border border-gray-300 rounded p-1 text-center text-sm focus:ring-2 focus:ring-blue-500" ${item.stock === 0 ? 'disabled' : ''}></td>
+                `;
+                tbody.appendChild(tr);
+            });
+            lagretCheckLoanRequirements();
+        }
+
+        function lagretRenderAdminInventory() {
+            const container = document.getElementById('lagretAdminInventoryList');
+            if (!container) return;
+            container.innerHTML = '';
+            lagretInventory.forEach((item) => {
+                const isLoan = item.type === 'loan';
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200 shadow-sm';
+                const actions = isLoan
+                    ? `<button onclick="lagretOpenCalendar('${item.id}')" class="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-2 py-1 rounded font-bold mr-2"><i class="fa-regular fa-calendar"></i> Schema</button>`
+                    : '';
+                div.innerHTML = `
+                    <div><span class="font-medium text-gray-700 block">${escapeHtml(item.name)}</span><span class="text-[10px] text-gray-400 uppercase">${isLoan ? 'Låneartikel' : 'Förbrukning'}</span></div>
+                    <div class="flex items-center gap-1">${actions}<button onclick="lagretAdjustStock('${item.id}', -1)" class="w-7 h-7 rounded bg-gray-100 hover:bg-gray-200 font-bold">-</button><input type="number" value="${item.stock}" onchange="lagretSetStock('${item.id}', this.value)" class="w-12 text-center border border-gray-200 rounded p-1 text-sm font-bold"><button onclick="lagretAdjustStock('${item.id}', 1)" class="w-7 h-7 rounded bg-gray-100 hover:bg-gray-200 font-bold">+</button><button onclick="lagretDeleteItem('${item.id}')" class="text-red-400 hover:text-red-600 ml-1"><i class="fa-regular fa-trash-can"></i></button></div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function lagretRenderOrders() {
+            const container = document.getElementById('lagretOrdersContainer');
+            if (!container) return;
+            container.innerHTML = '';
+            if (lagretOrders.length === 0) {
+                container.innerHTML = '<p class="text-sm text-gray-500 italic">Inga inkomna beställningar ännu.</p>';
+                return;
+            }
+            lagretOrders.forEach((order) => {
+                const div = document.createElement('div');
+                div.className = 'bg-white p-4 rounded-lg border border-gray-200 shadow-sm relative';
+                const itemsHtml = order.items.map((i) => `<li class="text-sm text-gray-600 font-medium">${escapeHtml(i.name)}: <span class="text-gray-900">${i.quantity} st</span></li>`).join('');
+                let periodHtml = '';
+                if (order.loanStart && order.loanEnd) {
+                    periodHtml = `<div class="mb-3 bg-purple-50 p-2 rounded border border-purple-100"><span class="text-xs font-bold text-purple-800 uppercase"><i class="fa-regular fa-calendar"></i> Låneperiod:</span><span class="text-sm text-purple-900 ml-2 font-medium">${order.loanStart} till ${order.loanEnd}</span></div>`;
+                }
+                let statusBadge = '';
+                let actionBtn = '';
+                if (order.status === 'Hanterad') {
+                    statusBadge = `<span class="px-2 py-1 text-xs font-bold rounded bg-green-100 text-green-800 flex items-center gap-1"><i class="fa-solid fa-check"></i> Hanterad av ${order.handledBy} (${order.handledAt})</span>`;
+                } else {
+                    statusBadge = `<span class="px-2 py-1 text-xs font-bold rounded bg-yellow-100 text-yellow-800 flex items-center gap-1"><i class="fa-regular fa-clock"></i> Väntar på hantering</span>`;
+                    actionBtn = `<button onclick="lagretMarkAsHandled(${order.id})" class="w-full mt-4 bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded text-xs transition duration-150"><i class="fa-solid fa-box-open"></i> Markera som packad & hanterad</button>`;
+                }
+                div.innerHTML = `
+                    <div class="flex justify-between items-center mb-3"><span class="text-xs text-gray-400">Order ID: #${order.id} | ${order.date}</span>${statusBadge}</div>
+                    ${periodHtml}
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                        <div class="bg-gray-50 p-2.5 rounded border border-gray-200"><h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Beställare:</h4><p class="text-sm font-bold text-gray-800">${escapeHtml(order.orderer.name)}</p><p class="text-xs text-gray-600">${escapeHtml(order.orderer.phone)}</p></div>
+                        <div class="bg-blue-50 p-2.5 rounded border border-blue-100"><h4 class="text-xs font-bold text-blue-800 uppercase tracking-wider mb-1">Mottagare & Adress:</h4><p class="text-sm font-bold text-gray-800">${escapeHtml(order.delivery.name)}</p><p class="text-xs text-gray-700">${escapeHtml(order.delivery.address)}${order.delivery.city ? ', ' + escapeHtml(order.delivery.city) : ''}</p><p class="text-xs text-gray-500 mt-1">${escapeHtml(order.delivery.phone)}</p></div>
+                    </div>
+                    <div class="mb-2"><h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Innehåll:</h4><ul class="list-disc pl-4 space-y-0.5">${itemsHtml}</ul></div>
+                    ${order.description ? `<p class="text-sm text-gray-700 italic border-t border-gray-100 pt-2 mt-2">"${escapeHtml(order.description)}"</p>` : ''}
+                    ${actionBtn}
+                    <button onclick="lagretDeleteOrder(${order.id})" class="absolute top-4 right-4 text-gray-300 hover:text-red-500 transition" title="Radera beställning"><i class="fa-solid fa-xmark"></i></button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function lagretRenderUserOrdersStatus() {
+            const container = document.getElementById('lagretUserOrdersList');
+            if (!container) return;
+            container.innerHTML = '';
+            if (lagretOrders.length === 0) {
+                container.innerHTML = '<p class="text-sm text-gray-500 italic">Du har inte skickat några beställningar under denna session.</p>';
+                return;
+            }
+            lagretOrders.forEach((order) => {
+                const div = document.createElement('div');
+                div.className = 'bg-gray-50 border border-gray-200 rounded-lg p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4';
+                const itemsSummary = order.items.map((i) => `${i.name} (${i.quantity} st)`).join(', ');
+                let statusText = '';
+                if (order.status === 'Hanterad') {
+                    statusText = `<div class="text-right"><span class="inline-flex items-center gap-1 text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded-full"><i class="fa-solid fa-check-circle"></i> Packad & Skickad</span><p class="text-[11px] text-gray-500 mt-1">Utfört av: <span class="font-bold text-gray-700">${order.handledBy}</span></p></div>`;
+                } else {
+                    statusText = `<div class="text-right"><span class="inline-flex items-center gap-1 text-xs font-bold text-yellow-700 bg-yellow-100 px-2 py-1 rounded-full"><i class="fa-regular fa-clock"></i> Mottagen - Väntar på hantering</span><p class="text-[11px] text-gray-400 mt-1">Behandlas inom kort av lageransvarig</p></div>`;
+                }
+                div.innerHTML = `<div><div class="flex items-center gap-2 mb-1"><span class="text-sm font-bold text-gray-800">Order #${order.id}</span><span class="text-xs text-gray-400">${order.date}</span></div><p class="text-xs text-gray-600"><span class="font-semibold">Artiklar:</span> ${itemsSummary}</p><p class="text-xs text-gray-600"><span class="font-semibold">Mottagare:</span> ${escapeHtml(order.delivery.name)}${order.delivery.city ? ' (' + escapeHtml(order.delivery.city) + ')' : ''}</p></div>${statusText}`;
+                container.appendChild(div);
+            });
+        }
+
+        function lagretCheckLoanRequirements() {
+            const section = document.getElementById('lagretLoanPeriodSection');
+            const startInput = document.getElementById('lagretLoanStart');
+            const endInput = document.getElementById('lagretLoanEnd');
+            if (!section) return;
+            let requiresLoanPeriod = false;
+            lagretInventory.forEach((item) => {
+                if (item.type === 'loan') {
+                    const qtyInput = document.getElementById(`lagret-qty-${item.id}`);
+                    if (qtyInput && parseInt(qtyInput.value) > 0) requiresLoanPeriod = true;
+                }
+            });
+            section.classList.toggle('hidden', !requiresLoanPeriod);
+            if (startInput) startInput.toggleAttribute('required', requiresLoanPeriod);
+            if (endInput) endInput.toggleAttribute('required', requiresLoanPeriod);
+        }
+
+        function lagretGetBookedQtyOnDate(itemId, dateObj) {
+            let count = 0;
+            const targetTime = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 12, 0, 0).getTime();
+            lagretBookings.forEach((b) => {
+                if (b.itemId === itemId) {
+                    const sObj = new Date(b.startDate);
+                    const eObj = new Date(b.endDate);
+                    const start = new Date(sObj.getFullYear(), sObj.getMonth(), sObj.getDate(), 0, 0, 0).getTime();
+                    const end = new Date(eObj.getFullYear(), eObj.getMonth(), eObj.getDate(), 23, 59, 59).getTime();
+                    if (targetTime >= start && targetTime <= end) count += b.quantity;
+                }
+            });
+            return count;
+        }
+
+        function lagretOpenCalendar(itemId) {
+            lagretSelectedCalItem = lagretInventory.find((i) => i.id === itemId);
+            lagretCalViewYear = lagretSystemDate.getFullYear();
+            lagretCalViewMonth = lagretSystemDate.getMonth();
+            document.getElementById('lagretCalTitleName').innerText = `Låneschema: ${lagretSelectedCalItem.name}`;
+            document.getElementById('lagretCalTitleDetails').innerText = `Totalt ${lagretSelectedCalItem.stock} st tillgängliga i systemet`;
+            document.getElementById('lagretCalendarModal').classList.remove('hidden');
+            document.getElementById('lagretCalendarModal').classList.add('flex');
+            document.getElementById('lagretCalAdminDetails').classList.toggle('hidden', lagretViewMode !== 'admin');
+            lagretRenderCalendarGrid();
+        }
+
+        function lagretCloseCalendar() {
+            document.getElementById('lagretCalendarModal').classList.add('hidden');
+            document.getElementById('lagretCalendarModal').classList.remove('flex');
+        }
+
+        function lagretChangeMonth(dir) {
+            lagretCalViewMonth += dir;
+            if (lagretCalViewMonth > 11) { lagretCalViewMonth = 0; lagretCalViewYear++; }
+            if (lagretCalViewMonth < 0) { lagretCalViewMonth = 11; lagretCalViewYear--; }
+            lagretRenderCalendarGrid();
+        }
+
+        function lagretRenderCalendarGrid() {
+            const monthNames = ['Januari', 'Februari', 'Mars', 'April', 'Maj', 'Juni', 'Juli', 'Augusti', 'September', 'Oktober', 'November', 'December'];
+            document.getElementById('lagretCalMonthYear').innerText = `${monthNames[lagretCalViewMonth]} ${lagretCalViewYear}`;
+            const grid = document.getElementById('lagretCalendarGrid');
+            if (!grid) return;
+            grid.innerHTML = '';
+            const daysInMonth = new Date(lagretCalViewYear, lagretCalViewMonth + 1, 0).getDate();
+            let firstDayIndex = new Date(lagretCalViewYear, lagretCalViewMonth, 1).getDay() - 1;
+            if (firstDayIndex === -1) firstDayIndex = 6;
+            for (let i = 0; i < firstDayIndex; i++) {
+                grid.innerHTML += '<div class="p-2 border border-transparent"></div>';
+            }
+            for (let day = 1; day <= daysInMonth; day++) {
+                const currentLoopDate = new Date(lagretCalViewYear, lagretCalViewMonth, day);
+                const bookedQty = lagretGetBookedQtyOnDate(lagretSelectedCalItem.id, currentLoopDate);
+                const totalStock = lagretSelectedCalItem.stock;
+                let bgColor = 'bg-white', borderColor = 'border-gray-200', textColor = 'text-gray-800', subText = 'Ledig';
+                if (bookedQty >= totalStock) {
+                    bgColor = 'bg-red-50'; borderColor = 'border-red-300'; textColor = 'text-red-800'; subText = 'Fullbokad';
+                } else if (bookedQty > 0) {
+                    bgColor = 'bg-yellow-50'; borderColor = 'border-yellow-300'; textColor = 'text-yellow-800'; subText = `${totalStock - bookedQty} kvar`;
+                } else {
+                    bgColor = 'bg-green-50'; borderColor = 'border-green-300'; textColor = 'text-green-800';
+                }
+                const isToday = currentLoopDate.toDateString() === lagretSystemDate.toDateString();
+                const todayStyle = isToday ? 'ring-2 ring-blue-600 ring-inset font-black' : '';
+                grid.innerHTML += `<div class="flex flex-col items-center justify-center p-1 sm:p-2 border rounded ${bgColor} ${borderColor} ${todayStyle} min-h-[60px]"><span class="text-sm md:text-base ${textColor}">${day}</span><span class="text-[9px] md:text-[10px] ${textColor} font-semibold uppercase">${subText}</span></div>`;
+            }
+            const listDiv = document.getElementById('lagretCalBookingsList');
+            if (listDiv) {
+                listDiv.innerHTML = '';
+                const itemBookings = lagretBookings.filter((b) => b.itemId === lagretSelectedCalItem.id);
+                if (itemBookings.length === 0) {
+                    listDiv.innerHTML = '<p class="text-sm text-gray-500">Inga utlån registrerade.</p>';
+                } else {
+                    itemBookings.forEach((b) => {
+                        listDiv.innerHTML += `<div class="bg-gray-50 border border-gray-200 rounded p-3 flex flex-col md:flex-row md:justify-between md:items-center text-sm"><div><p class="font-bold text-gray-800">${b.startDate} <i class="fa-solid fa-arrow-right text-xs mx-1"></i> ${b.endDate}</p><p class="text-gray-600"><span class="font-semibold">Plats:</span> ${escapeHtml(b.recipient.address)} (${escapeHtml(b.recipient.name)})</p></div><div class="mt-2 md:mt-0 font-bold text-blue-800 bg-blue-100 px-3 py-1 rounded">Antal: ${b.quantity} st</div></div>`;
+                    });
+                }
+            }
+        }
+
+        window.handleLagretOrderSubmit = function (event) {
+            event.preventDefault();
+            const orderedItems = [];
+            const loanStartStr = document.getElementById('lagretLoanStart').value;
+            const loanEndStr = document.getElementById('lagretLoanEnd').value;
+            let hasLoanItem = false;
+
+            for (const item of lagretInventory) {
+                const qtyInput = document.getElementById(`lagret-qty-${item.id}`);
+                const qty = parseInt(qtyInput ? qtyInput.value : 0) || 0;
+                if (qty > 0) {
+                    if (item.type === 'consumable') {
+                        if (qty > item.stock) {
+                            alert(`Du har valt fler ${item.name} än vad som finns i lagret!`);
+                            return;
+                        }
+                    } else if (item.type === 'loan') {
+                        hasLoanItem = true;
+                        if (!loanStartStr || !loanEndStr) {
+                            alert('Du måste välja start- och slutdatum för låneartiklar.');
+                            return;
+                        }
+                        const dS = new Date(loanStartStr);
+                        const dE = new Date(loanEndStr);
+                        const checkDate = new Date(dS.getTime());
+                        while (checkDate <= dE) {
+                            const bookedAlready = lagretGetBookedQtyOnDate(item.id, checkDate);
+                            if ((bookedAlready + qty) > item.stock) {
+                                alert(`Tyvärr, den ${checkDate.toISOString().split('T')[0]} finns det inte tillräckligt många ${item.name} lediga. Kolla schemat!`);
+                                return;
+                            }
+                            checkDate.setDate(checkDate.getDate() + 1);
+                        }
+                    }
+                    orderedItems.push({ name: item.name, id: item.id, type: item.type, quantity: qty });
+                }
+            }
+
+            if (orderedItems.length === 0) {
+                alert('Vänligen välj minst en artikel.');
+                return;
+            }
+
+            const ordererInfo = {
+                name: document.getElementById('lagretOrdererName').value.trim(),
+                phone: document.getElementById('lagretOrdererPhone').value.trim(),
+                email: document.getElementById('lagretOrdererEmail').value.trim(),
+            };
+            const recipientInfo = {
+                name: document.getElementById('lagretRecipientName').value.trim(),
+                phone: document.getElementById('lagretRecipientPhone').value.trim(),
+                address: document.getElementById('lagretDeliveryAddress').value.trim(),
+                city: document.getElementById('lagretCity').value.trim(),
+            };
+
+            orderedItems.forEach((ordered) => {
+                if (ordered.type === 'consumable') {
+                    const item = lagretInventory.find((i) => i.id === ordered.id);
+                    if (item) item.stock -= ordered.quantity;
+                } else if (ordered.type === 'loan') {
+                    lagretBookings.push({
+                        id: Date.now() + Math.floor(Math.random() * 1000),
+                        itemId: ordered.id,
+                        startDate: loanStartStr,
+                        endDate: loanEndStr,
+                        quantity: ordered.quantity,
+                        recipient: recipientInfo,
+                    });
+                }
+            });
+
+            const newOrder = {
+                id: Date.now(),
+                date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+                status: 'Mottagen',
+                handledBy: null,
+                handledAt: null,
+                description: document.getElementById('lagretDescription').value.trim(),
+                items: orderedItems,
+                orderer: ordererInfo,
+                delivery: recipientInfo,
+                loanStart: hasLoanItem ? loanStartStr : null,
+                loanEnd: hasLoanItem ? loanEndStr : null,
+            };
+
+            lagretOrders.unshift(newOrder);
+            document.getElementById('lagretOrderForm').reset();
+            const checkbox = document.getElementById('lagretSameAsOrderer');
+            if (checkbox) {
+                checkbox.checked = false;
+                toggleLagretSameRecipient(checkbox);
+            }
+            lagretCheckLoanRequirements();
+            alert('Förfrågan inskickad! Följ statusen på din order under "Mina skickade beställningar" längst ner.');
+            lagretRender();
+        };
+
+        window.toggleLagretSameRecipient = function (checkbox) {
+            const recipientName = document.getElementById('lagretRecipientName');
+            const recipientPhone = document.getElementById('lagretRecipientPhone');
+            if (checkbox.checked) {
+                recipientName.value = document.getElementById('lagretOrdererName').value;
+                recipientPhone.value = document.getElementById('lagretOrdererPhone').value;
+                recipientName.setAttribute('readonly', 'true');
+                recipientPhone.setAttribute('readonly', 'true');
+                recipientName.classList.add('bg-gray-100', 'text-gray-500');
+                recipientPhone.classList.add('bg-gray-100', 'text-gray-500');
+            } else {
+                recipientName.removeAttribute('readonly');
+                recipientPhone.removeAttribute('readonly');
+                recipientName.classList.remove('bg-gray-100', 'text-gray-500');
+                recipientPhone.classList.remove('bg-gray-100', 'text-gray-500');
+            }
+        };
+
+        window.syncLagretRecipient = function () {
+            const checkbox = document.getElementById('lagretSameAsOrderer');
+            if (checkbox && checkbox.checked) {
+                document.getElementById('lagretRecipientName').value = document.getElementById('lagretOrdererName').value;
+                document.getElementById('lagretRecipientPhone').value = document.getElementById('lagretOrdererPhone').value;
+            }
+        };
+
+        window.lagretAdjustStock = function (id, change) {
+            const item = lagretInventory.find((i) => i.id === id);
+            if (item) { item.stock = Math.max(0, item.stock + change); lagretRender(); }
+        };
+        window.lagretSetStock = function (id, value) {
+            const item = lagretInventory.find((i) => i.id === id);
+            if (item) { item.stock = Math.max(0, parseInt(value) || 0); lagretRender(); }
+        };
+        window.lagretDeleteItem = function (id) {
+            if (confirm('Radera artikel?')) { lagretInventory = lagretInventory.filter((i) => i.id !== id); lagretRender(); }
+        };
+        window.lagretDeleteOrder = function (id) {
+            lagretOrders = lagretOrders.filter((o) => o.id !== id); lagretRender();
+        };
+        window.lagretAddNewItem = function () {
+            const name = document.getElementById('lagretNewItemName').value.trim();
+            const type = document.getElementById('lagretNewItemType').value;
+            const stock = parseInt(document.getElementById('lagretNewItemStock').value) || 0;
+            if (!name) return alert('Ange namn.');
+            const id = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+            lagretInventory.push({ id, name, stock, type });
+            lagretRender();
+        };
+        window.lagretMarkAsHandled = function (orderId) {
+            const order = lagretOrders.find((o) => o.id === orderId);
+            if (order) {
+                const staffName = (document.getElementById('lagretAdminStaffName').value || 'Lageransvarig').trim();
+                if (!staffName) {
+                    alert('Vänligen fyll i vem som utför beställningen (Packas av) överst i panelen.');
+                    return;
+                }
+                order.status = 'Hanterad';
+                order.handledBy = staffName;
+                order.handledAt = new Date().toISOString().slice(0, 16).replace('T', ' ');
+                alert(`Order #${order.id} har markerats som packad och godkänd av ${staffName}!`);
+                lagretRender();
+            }
+        };
+
         function buildGraphicsOrderMessage(graphicsRequest, fallbackMessage) {
             if (!graphicsRequest) return fallbackMessage;
             const lines = [
@@ -2730,6 +3482,29 @@
                         <div class="font-semibold text-gray-900">${escapeHtml(meetingLabel || 'Zoommöte')}</div>
                         <dl class="space-y-1 text-xs text-gray-600">
                             ${zoomRows.map(([label, value]) => `
+                                <div>
+                                    <dt class="font-bold text-gray-700">${escapeHtml(label)}</dt>
+                                    <dd class="whitespace-pre-wrap">${escapeHtml(value)}</dd>
+                                </div>
+                            `).join('')}
+                        </dl>
+                    </div>
+                `;
+            }
+            if (order && order.articleRequest) {
+                const article = order.articleRequest;
+                const articleLabel = article.articleName || 'Artikel';
+                const articleRows = [
+                    ['Artikel', article.articleName],
+                    ['Antal', article.quantity + (article.unit ? ` ${article.unit}` : '')],
+                    ['Övrigt', article.notes],
+                ].filter(([, value]) => String(value || '').trim());
+
+                return `
+                    <div class="space-y-2">
+                        <div class="font-semibold text-gray-900">${escapeHtml(articleLabel)}</div>
+                        <dl class="space-y-1 text-xs text-gray-600">
+                            ${articleRows.map(([label, value]) => `
                                 <div>
                                     <dt class="font-bold text-gray-700">${escapeHtml(label)}</dt>
                                     <dd class="whitespace-pre-wrap">${escapeHtml(value)}</dd>
@@ -4141,7 +4916,7 @@
         function hideAll() {
             stopAdminOrdersLiveFeed();
             stopAdminOverviewOrdersSimulation();
-            ['dashboard', 'guide-page', 'select-department', 'order-form-page', 'confirmation-page', 'manage-orders', 'sent-orders', 'admin-users', 'ai-management', 'smtp-management']
+            ['dashboard', 'guide-page', 'select-department', 'order-form-page', 'confirmation-page', 'manage-orders', 'sent-orders', 'admin-users', 'ai-management', 'smtp-management', 'lagret-page']
             .forEach(id => document.getElementById(id).classList.add('hidden'));
             closeAIChatPopup();
         }
@@ -4162,6 +4937,9 @@
             if (!options.skipDepartmentGuard && await guardDepartmentManageExit(() => showDashboard({ skipDepartmentGuard: true }))) {
                 return;
             }
+            if (!options.skipAdminUsersGuard && await guardAdminUsersExit(() => showDashboard({ skipAdminUsersGuard: true }))) {
+                return;
+            }
 
             showPage('dashboard');
             const menu = document.getElementById('menu-container');
@@ -4173,15 +4951,21 @@
                 menu.appendChild(createMenuBtn("SMTP-inställningar", "fa-envelope", "bg-teal-600", () => loadSmtpManagement()));
                 menu.appendChild(createMenuBtn("Lägg beställning", "fa-plus-circle", "bg-emerald-600", () => showDepartments('order')));
                 menu.appendChild(createMenuBtn("Redigera avdelningar", "fa-sitemap", "bg-slate-600", () => showDepartments('manage')));
-                menu.appendChild(createMenuBtn("Visa alla beställningar", "fa-list-check", "bg-purple-600", () => loadGraphicsOrders()));
+                const adminGroups = getCurrentUserGroups();
+                if (adminGroups.length) {
+                    adminGroups.forEach((dept) => {
+                        menu.appendChild(createMenuBtn(BportalUI.getDepartmentOrderButtonLabel(dept), "fa-list-check", "bg-purple-600", () => loadGraphicsOrders(dept)));
+                    });
+                } else {
+                    menu.appendChild(createMenuBtn("Visa alla beställningar", "fa-list-check", "bg-purple-600", () => loadGraphicsOrders()));
+                }
             } else {
                 menu.appendChild(createMenuBtn("Gör en beställning", "fa-plus-circle", "bg-blue-600", () => showDepartments('order')));
                 const groups = getCurrentUserGroups();
                 if (groups.length) {
-                    const incomingOrders = await loadIncomingOrdersForMenu(groups);
-                    if (BportalUI.shouldShowIncomingOrdersButton(currentUser, incomingOrders)) {
-                        menu.appendChild(createMenuBtn("Inkomna beställningar", "fa-list-check", "bg-purple-600", () => loadGraphicsOrders()));
-                    }
+                    groups.forEach((dept) => {
+                        menu.appendChild(createMenuBtn(BportalUI.getDepartmentOrderButtonLabel(dept), "fa-list-check", "bg-purple-600", () => loadGraphicsOrders(dept)));
+                    });
                 }
                 const sentOrders = await loadSentOrdersForMenu();
                 if (BportalUI.shouldShowSentOrdersButton(currentUser, sentOrders)) {
@@ -4263,6 +5047,35 @@
             const result = await apiRequest('/api/users');
             adminUsers = result.users;
             return adminUsers;
+        }
+
+        async function seedDemoUsers() {
+            if (!currentUser || currentUser.role !== 'admin') return;
+
+            const btn = document.querySelector('button[onclick="seedDemoUsers()"]');
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Skapar...';
+                btn.disabled = true;
+            }
+
+            try {
+                const result = await apiRequest('/api/admin/seed-demo-users', {
+                    method: 'POST',
+                    headers: currentAuthHeaders(),
+                });
+                adminUsers = result.users || [];
+                renderAdminUsers();
+                if (btn) {
+                    btn.innerHTML = `<i class="fas fa-check"></i> ${result.created} skapade`;
+                    setTimeout(() => { btn.disabled = false; btn.innerHTML = '<i class="fas fa-flask"></i> Skapa demousers'; }, 3000);
+                }
+            } catch (error) {
+                if (btn) {
+                    btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Misslyckades';
+                    btn.disabled = false;
+                    setTimeout(() => { btn.innerHTML = '<i class="fas fa-flask"></i> Skapa demousers'; }, 3000);
+                }
+            }
         }
 
         async function syncStaffFromAmbCentral() {
@@ -4468,6 +5281,13 @@
                 });
                 const result = await apiRequest('/api/users');
                 adminUsers = result.users;
+                if (currentUser && currentUser.username === username) {
+                    const updated = adminUsers.find((u) => u.username === username);
+                    if (updated) {
+                        currentUser = { ...currentUser, ...updated };
+                        saveCurrentUser(currentUser, impersonatedBy);
+                    }
+                }
                 renderAdminUsers();
             } catch (error) {
                 alert('Kunde inte spara användaren.');
@@ -4530,6 +5350,7 @@
 
         function closeAdminUserModal() {
             adminEditingUsername = "";
+            adminUserModalInitial = null;
             const modal = document.getElementById('admin-user-modal');
             if (modal) modal.classList.add('hidden');
             const message = document.getElementById('admin-user-message');
@@ -4558,6 +5379,12 @@
             document.getElementById('admin-user-role').value = user.role;
             populateAdminGroupSelect(userGroups(user));
             document.getElementById('admin-user-message').innerText = '';
+            adminUserModalInitial = {
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                groups: userGroups(user).slice().sort()
+            };
             openAdminUserModal();
         }
 
@@ -4599,6 +5426,13 @@
                 message.innerText = 'Användaren är sparad.';
                 const result = await apiRequest('/api/users');
                 adminUsers = result.users;
+                if (currentUser && currentUser.username === adminEditingUsername) {
+                    const updated = adminUsers.find((u) => u.username === adminEditingUsername);
+                    if (updated) {
+                        currentUser = { ...currentUser, ...updated };
+                        saveCurrentUser(currentUser, impersonatedBy);
+                    }
+                }
                 renderAdminUsers();
                 setTimeout(closeAdminUserModal, 400);
             } catch (error) {
@@ -4680,6 +5514,15 @@
                 body: JSON.stringify(userPayloadFromAdminUser(user, overrides))
             });
             await loadAdminUserData();
+            if (currentUser && currentUser.username === user.username) {
+                const updated = adminUsers.find((entry) => entry.username === user.username);
+                if (updated) {
+                    currentUser = { ...currentUser, ...updated };
+                    saveCurrentUser(currentUser, impersonatedBy);
+                    currentUserSettings = normalizeUserSettings(currentUserSettings);
+                    syncSettingsForm();
+                }
+            }
             renderDepartments();
         }
 
@@ -4851,10 +5694,134 @@
         }
 
         window.addEventListener('beforeunload', (event) => {
-            if (!hasUnsavedDepartmentChanges()) return;
+            if (!hasUnsavedDepartmentChanges() && !hasUnsavedAdminUserChanges()) return;
             event.preventDefault();
             event.returnValue = '';
         });
+
+        function isAdminUsersPageVisible() {
+            const section = document.getElementById('admin-users');
+            return section && !section.classList.contains('hidden');
+        }
+
+        function hasUnsavedAdminUserChanges() {
+            if (!currentUser || currentUser.role !== 'admin') return false;
+            if (!isAdminUsersPageVisible()) return false;
+
+            const editModal = document.getElementById('admin-user-modal');
+            if (editModal && !editModal.classList.contains('hidden') && adminUserModalInitial) {
+                const current = {
+                    name: document.getElementById('admin-user-name').value.trim(),
+                    email: document.getElementById('admin-user-email').value.trim(),
+                    role: document.getElementById('admin-user-role').value,
+                    groups: selectedAdminGroups().slice().sort()
+                };
+                if (JSON.stringify(current) !== JSON.stringify(adminUserModalInitial)) return true;
+            }
+
+            const rows = document.querySelectorAll('#admin-users-tbody tr');
+            for (const row of rows) {
+                try {
+                    const original = JSON.parse(row.dataset.original);
+                    const name = row.querySelector('[data-field="name"]').value.trim();
+                    const email = row.querySelector('[data-field="email"]').value.trim();
+                    const role = row.querySelector('[data-field="role"]').value;
+                    const checked = row.querySelectorAll('.dept-dropdown input[type="checkbox"]:checked');
+                    const groups = Array.from(checked).map((cb) => cb.value).sort();
+                    if (name !== original.name || email !== original.email || role !== original.role || JSON.stringify(groups) !== JSON.stringify(original.groups)) {
+                        return true;
+                    }
+                } catch {}
+            }
+
+            return false;
+        }
+
+        function showAdminUsersUnsavedModal() {
+            const modal = document.getElementById('admin-users-unsaved-modal');
+            if (!modal) return Promise.resolve('stay');
+            modal.classList.add('is-open');
+            return new Promise((resolve) => {
+                adminUsersUnsavedResolver = resolve;
+            });
+        }
+
+        function resolveAdminUsersUnsavedModal(action) {
+            const modal = document.getElementById('admin-users-unsaved-modal');
+            if (modal) modal.classList.remove('is-open');
+            if (adminUsersUnsavedResolver) {
+                adminUsersUnsavedResolver(action);
+                adminUsersUnsavedResolver = null;
+            }
+        }
+
+        async function saveAllDirtyInlineUsers() {
+            const rows = document.querySelectorAll('#admin-users-tbody tr');
+            let savedCount = 0;
+            let failCount = 0;
+            for (const row of rows) {
+                try {
+                    const original = JSON.parse(row.dataset.original);
+                    const name = row.querySelector('[data-field="name"]').value.trim();
+                    const email = row.querySelector('[data-field="email"]').value.trim();
+                    const role = row.querySelector('[data-field="role"]').value;
+                    const checked = row.querySelectorAll('.dept-dropdown input[type="checkbox"]:checked');
+                    const groups = Array.from(checked).map((cb) => cb.value);
+                    if (name !== original.name || email !== original.email || role !== original.role || JSON.stringify(groups.sort()) !== JSON.stringify(original.groups)) {
+                        const username = row.dataset.username;
+                        await apiRequest(`/api/users/${encodeURIComponent(username)}`, {
+                            method: 'PUT',
+                            body: JSON.stringify({ username, name, email, role, groups })
+                        });
+                        savedCount++;
+                    }
+                } catch {
+                    failCount++;
+                }
+            }
+            return { savedCount, failCount };
+        }
+
+        async function guardAdminUsersExit(afterExit) {
+            if (!hasUnsavedAdminUserChanges()) return false;
+
+            const action = await showAdminUsersUnsavedModal();
+            if (action === 'stay') return true;
+            if (action === 'discard') {
+                if (document.getElementById('admin-user-modal') && !document.getElementById('admin-user-modal').classList.contains('hidden')) {
+                    closeAdminUserModal();
+                }
+                renderAdminUsers();
+                if (typeof afterExit === 'function') afterExit();
+                return true;
+            }
+            if (action === 'save') {
+                const editModal = document.getElementById('admin-user-modal');
+                if (editModal && !editModal.classList.contains('hidden')) {
+                    await saveAdminUser();
+                }
+                const inlineResult = await saveAllDirtyInlineUsers();
+                if (inlineResult.savedCount > 0 || inlineResult.failCount > 0) {
+                    if (inlineResult.failCount > 0) {
+                        alert(`Sparade ${inlineResult.savedCount} användare. ${inlineResult.failCount} kunde inte sparas.`);
+                    }
+                    const users = await apiRequest('/api/users');
+                    adminUsers = users.users;
+                    if (currentUser) {
+                        const updated = adminUsers.find((u) => u.username === currentUser.username);
+                        if (updated) {
+                            currentUser = { ...currentUser, ...updated };
+                            saveCurrentUser(currentUser, impersonatedBy);
+                        }
+                    }
+                    renderAdminUsers();
+                }
+                if (typeof afterExit === 'function') afterExit();
+                return true;
+            }
+
+            return true;
+        }
 
         async function showDepartments(mode = 'order', options = {}) {
             if (!options.skipDepartmentGuard && mode !== 'manage' && await guardDepartmentManageExit(() => showDepartments(mode, { skipDepartmentGuard: true }))) {
@@ -4880,6 +5847,7 @@
             document.querySelector('#select-department .as-header p').innerText = departmentPageMode === 'manage'
                 ? 'Klicka i fälten för att ändra avdelning och personer direkt i korten.'
                 : 'Välj rätt avdelning direkt, eller ta hjälp av AI-assistenten.';
+            document.getElementById('asAiCard').classList.toggle('hidden', departmentPageMode === 'manage');
             document.getElementById('asOpenAi').classList.toggle('hidden', departmentPageMode === 'manage');
             renderDepartments();
             ensureAIChatGreeting();
@@ -4939,11 +5907,15 @@
                     </div>
                     ${departmentPageMode === 'order' ? '<span class="as-card-arrow">›</span>' : ''}
                 `;
-                if (departmentPageMode === 'order') {
-                    card.onclick = () => {
-                        openOrderForm(department.name, 'manual');
-                    };
+        if (departmentPageMode === 'order') {
+            card.onclick = () => {
+                if (department.name === 'Lagret') {
+                    openLagretView();
+                } else {
+                    openOrderForm(department.name, 'manual');
                 }
+            };
+        }
                 grid.appendChild(card);
             });
         }
@@ -6007,12 +6979,14 @@
             document.getElementById('order-deadline-picker').value = document.getElementById('order-deadline').value;
             setGraphicsOrderFieldsVisible(isGraphicsOrderTarget());
             setZoomOrderFieldsVisible(isZoomOrderTarget());
+            setLagretOrderFieldsVisible(isLagretOrderTarget());
             if (isZoomOrderTarget()) {
                 initZoomMeetingCalendar(document.getElementById('order-deadline').value);
             } else {
                 resetZoomMeetingCalendar(true);
             }
             resetGraphicsOrderFields();
+            resetArticleOrderFields();
             document.getElementById('order-msg').value = '';
             document.getElementById('order-files').value = '';
             applyOrderFormBackConfig();
@@ -6024,11 +6998,14 @@
             const deadline = document.getElementById('order-deadline').value.trim();
             const graphicsRequest = isGraphicsOrderTarget() ? getGraphicsOrderFields() : null;
             const zoomMeetingRequest = isZoomOrderTarget() ? getZoomMeetingRequest() : null;
+            const articleRequest = isLagretOrderTarget() ? getArticleRequest() : null;
             const msg = graphicsRequest
                 ? buildGraphicsOrderMessage(graphicsRequest, extraMessage)
                 : zoomMeetingRequest
                     ? buildZoomMeetingMessage(zoomMeetingRequest, extraMessage)
-                    : extraMessage;
+                    : articleRequest
+                        ? buildArticleOrderMessage(articleRequest, extraMessage)
+                        : extraMessage;
 
             if (graphicsRequest) {
                 if (!graphicsRequest.title) return alert("Skriv rubrik på uppdraget.");
@@ -6040,6 +7017,11 @@
                 if (!zoomMeetingRequest.date || !zoomMeetingRequest.time) {
                     return alert('Välj datum och tid i kalendern.');
                 }
+            }
+
+            if (articleRequest) {
+                if (!articleRequest.articleName) return alert("Skriv vilken artikel du vill beställa.");
+                if (!articleRequest.quantity) return alert("Skriv antal.");
             }
 
             if(!msg) return alert("Skriv ett meddelande");
@@ -6058,7 +7040,8 @@
                 status: 'Ny',
                 attachments: attachments,
                 graphicsRequest: graphicsRequest,
-                zoomMeetingRequest: zoomMeetingRequest
+                zoomMeetingRequest: zoomMeetingRequest,
+                articleRequest: articleRequest
             };
 
             try {
@@ -6079,18 +7062,19 @@
             document.getElementById('order-deadline-picker').value = '';
             document.getElementById('order-files').value = '';
             resetGraphicsOrderFields();
+            resetArticleOrderFields();
             resetZoomMeetingCalendar(false);
             showPage('confirmation-page');
         }
 
-        async function loadGraphicsOrders() {
+        async function loadGraphicsOrders(filterDept) {
             showPage('manage-orders');
             const tbody = document.getElementById('orders-tbody');
             tbody.innerHTML = `<tr><td colspan="${(currentUser && currentUser.role === 'admin') ? '7' : '6'}" class="px-6 py-4 text-center text-gray-500">Laddar beställningar...</td></tr>`;
             attachmentPreviewStore.clear();
 
-            const targetDepartments = getCurrentUserGroups();
             const isAdmin = currentUser && currentUser.role === 'admin';
+            const targetDepartments = filterDept ? [filterDept] : getCurrentUserGroups();
 
             if (isAdmin) {
                 try {
@@ -6108,19 +7092,25 @@
                 initAdminOverviewOrdersSimulation();
             }
 
+            const titleSuffix = filterDept ? filterDept : targetDepartments.join(', ');
             if (isAdmin) {
-                document.getElementById('manage-orders-title').innerText = "Alla inkomna beställningar (Översikt)";
+                document.getElementById('manage-orders-title').innerText = filterDept
+                    ? `Beställningar till ${filterDept}`
+                    : "Alla inkomna beställningar (Översikt)";
                 document.getElementById('th-dept').classList.remove('hidden');
                 document.getElementById('admin-overview-orders').classList.remove('hidden');
             } else {
-                document.getElementById('manage-orders-title').innerText = `Inkomna beställningar till ${targetDepartments.join(', ')}`;
+                document.getElementById('manage-orders-title').innerText = `Inkomna beställningar till ${titleSuffix}`;
                 document.getElementById('th-dept').classList.add('hidden');
                 document.getElementById('admin-overview-orders').classList.add('hidden');
             }
 
             let graphicsOrders;
             try {
-                if (isAdmin) {
+                if (filterDept) {
+                    const result = await apiRequest(`/api/orders?dept=${encodeURIComponent(filterDept)}`, { timeoutMs: 3500 });
+                    graphicsOrders = result.orders;
+                } else if (isAdmin) {
                     const result = await apiRequest('/api/orders', { timeoutMs: 3500 });
                     graphicsOrders = result.orders;
                 } else {
@@ -6135,7 +7125,7 @@
                     });
                 }
             } catch (error) {
-                if (isAdmin) {
+                if (isAdmin && !filterDept) {
                     graphicsOrders = getOrders();
                 } else {
                     graphicsOrders = getOrders().filter(o => targetDepartments.includes(o.dept));
@@ -6145,7 +7135,9 @@
             cachedOrders = graphicsOrders;
 
             if (isAdmin) {
-                document.getElementById('manage-orders-title').innerText = "Alla inkomna beställningar (Översikt)";
+                document.getElementById('manage-orders-title').innerText = filterDept
+                    ? `Beställningar till ${filterDept}`
+                    : "Alla inkomna beställningar (Översikt)";
                 document.getElementById('th-dept').classList.remove('hidden');
                 document.getElementById('admin-overview-orders').classList.remove('hidden');
                 if (graphicsOrders.length === 0) {
@@ -6155,7 +7147,7 @@
                 }
                 renderOrderStats(graphicsOrders);
             } else {
-                document.getElementById('manage-orders-title').innerText = `Inkomna beställningar till ${targetDepartments.join(', ')}`;
+                document.getElementById('manage-orders-title').innerText = `Inkomna beställningar till ${titleSuffix}`;
                 document.getElementById('th-dept').classList.add('hidden');
                 document.getElementById('admin-overview-orders').classList.add('hidden');
                 document.getElementById('order-stats').innerHTML = '';

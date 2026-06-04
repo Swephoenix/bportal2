@@ -10,6 +10,7 @@ const {
   shouldShowSentOrdersButton,
   shouldShowProposalUploadButton,
   suggestDepartmentFromMessage,
+  getDepartmentOrderButtonLabel,
 } = require('../../ui-helpers');
 
 test('shouldShowProposalUploadButton hides completed orders and shows reopened ones for member', () => {
@@ -63,11 +64,23 @@ test('shouldShowSentOrdersButton only shows the button when the user has sent or
   );
 });
 
-test('shouldShowIncomingOrdersButton only shows the button when incoming orders exist', () => {
+test('shouldShowIncomingOrdersButton shows for assigned department users even without incoming orders', () => {
   const user = { role: 'member', groups: ['Grafikgruppen'] };
 
-  assert.equal(shouldShowIncomingOrdersButton(user, []), false);
+  assert.equal(shouldShowIncomingOrdersButton(user, []), true);
   assert.equal(shouldShowIncomingOrdersButton(user, [{ id: '1', dept: 'Grafikgruppen' }]), true);
+  assert.equal(shouldShowIncomingOrdersButton({ role: 'member' }, []), false);
+});
+
+test('getDepartmentOrderButtonLabel names department order buttons consistently', () => {
+  assert.equal(
+    getDepartmentOrderButtonLabel('Lagret'),
+    'Avdelningsbeställningar (Lagret)',
+  );
+  assert.equal(
+    getDepartmentOrderButtonLabel(' Grafikgruppen '),
+    'Avdelningsbeställningar (Grafikgruppen)',
+  );
 });
 
 test('getDefaultOrderDeadline returns tomorrow in yyyy-mm-dd format', () => {

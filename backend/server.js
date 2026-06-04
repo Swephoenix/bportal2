@@ -9,7 +9,9 @@ const bcrypt = require('bcryptjs');
 
 const DB_DIR = path.join(__dirname, 'data');
 fs.mkdirSync(DB_DIR, { recursive: true });
-const db = new Database(path.join(DB_DIR, 'bportal.db'));
+const DB_FILE = process.env.BPORTAL_DB_FILE
+  || (process.env.NODE_ENV === 'test' ? ':memory:' : path.join(DB_DIR, 'bportal.db'));
+const db = new Database(DB_FILE);
 
 const envPath = path.join(__dirname, '.env');
 if (fs.existsSync(envPath)) {
@@ -66,6 +68,7 @@ const DEPARTMENTS = [
   'Beställa broschyrer',
   'Grafikgruppen',
   'Boka zoom-möte',
+  'Lagret',
   'Medlemsutskick',
   'Medlemsregister',
   'IT-support / Mjukvara',
@@ -85,6 +88,7 @@ const DEPARTMENT_DESCRIPTIONS = {
   'Beställa broschyrer': 'Beställningar av broschyrer, trycksaker, foldrar och informationsmaterial.',
   Grafikgruppen: 'Grafik, bilder, design, affischer, banners, layout, logotyper och visuellt material.',
   'Boka zoom-möte': 'Bokning och planering av digitala möten i Zoom.',
+  Lagret: 'Beställning av profilartiklar, kontorsmaterial, broschyrer och övriga fysiska artiklar från lagret.',
   Medlemsutskick: 'Utskick till medlemmar, nyhetsbrev, medlemskommunikation och massutskick.',
   Medlemsregister: 'Medlemsuppgifter, register, adressändringar, medlemsdata och registerfrågor.',
   'IT-support / Mjukvara': 'Datorproblem, inloggning, lösenord, e-post, skrivare, Teams, Office och mjukvara.',
@@ -93,7 +97,7 @@ const DEPARTMENT_DESCRIPTIONS = {
   'HR / Personalfrågor': 'Personalfrågor, HR, arbetsmiljö, anställning, ledighet och interna personalärenden.',
 };
 
-const PROTECTED_DEPARTMENT_NAMES = new Set(['Grafikgruppen', 'Boka zoom-möte']);
+const PROTECTED_DEPARTMENT_NAMES = new Set(['Grafikgruppen', 'Boka zoom-möte', 'Lagret']);
 
 const DEPARTMENT_ALIASES = {
   'grafiska produktionsgruppen': 'Grafikgruppen',
@@ -116,44 +120,14 @@ const SECOND_PROTECTED_DEPARTMENT_RECORD = {
   description: DEPARTMENT_DESCRIPTIONS['Boka zoom-möte'],
 };
 
-const DEFAULT_USERS = [
-  { username: 'user', password: 'user', user: { name: 'Anders Jansson', role: 'member', email: 'personal@example.com' } },
-  { username: 'lena', password: 'demo', user: { name: 'Lena Karlsson', role: 'member', email: 'lena.karlsson@example.com', group: 'Frågor om partiet', groups: ['Frågor om partiet'] } },
-  { username: 'mats', password: 'demo', user: { name: 'Mats Nilsson', role: 'member', email: 'mats.nilsson@example.com', group: 'Valorganisation', groups: ['Valorganisation'] } },
-  { username: 'sara', password: 'demo', user: { name: 'Sara Lindberg', role: 'member', email: 'sara.lindberg@example.com', group: 'Utskick i Sociala medier', groups: ['Utskick i Sociala medier'] } },
-  { username: 'erik', password: 'demo', user: { name: 'Erik Svensson', role: 'member', email: 'erik.svensson@example.com', group: 'Skribentgruppen', groups: ['Skribentgruppen'] } },
-  { username: 'maria', password: 'demo', user: { name: 'Maria Ek', role: 'member', email: 'maria.ek@example.com', group: 'Filmgruppen', groups: ['Filmgruppen'] } },
-  { username: 'oskar', password: 'demo', user: { name: 'Oskar Lund', role: 'member', email: 'oskar.lund@example.com', group: 'Juridikgruppen', groups: ['Juridikgruppen'] } },
-  { username: 'elin', password: 'demo', user: { name: 'Elin Holm', role: 'member', email: 'elin.holm@example.com', group: 'Sekretessavtal', groups: ['Sekretessavtal'] } },
-  { username: 'per', password: 'demo', user: { name: 'Per Gustafsson', role: 'member', email: 'per.gustafsson@example.com', group: 'Beställa broschyrer', groups: ['Beställa broschyrer'] } },
-  { username: 'user2', password: 'user2', user: { name: 'Anna Olsson', role: 'member', email: 'grafikgruppen@example.com', group: 'Grafikgruppen', groups: ['Grafikgruppen'] } },
-  { username: 'zoom', password: 'demo', user: { name: 'Zoomansvarig', role: 'member', email: 'zoom@example.com', group: 'Boka zoom-möte', groups: ['Boka zoom-möte'] } },
-  { username: 'sofia', password: 'demo', user: { name: 'Sofia Bergström', role: 'member', email: 'sofia.bergstrom@example.com', group: 'Medlemsutskick', groups: ['Medlemsutskick'] } },
-  { username: 'johan', password: 'demo', user: { name: 'Johan Eriksson', role: 'member', email: 'johan.eriksson@example.com', group: 'Medlemsregister', groups: ['Medlemsregister'] } },
-  { username: 'emma', password: 'demo', user: { name: 'Emma Persson', role: 'member', email: 'emma.persson@example.com', group: 'IT-support / Mjukvara', groups: ['IT-support / Mjukvara'] } },
-  { username: 'niklas', password: 'demo', user: { name: 'Niklas Åberg', role: 'member', email: 'niklas.aberg@example.com', group: 'Hemsidan', groups: ['Hemsidan'] } },
-  { username: 'camilla', password: 'demo', user: { name: 'Camilla Larsson', role: 'member', email: 'camilla.larsson@example.com', group: 'Marknad', groups: ['Marknad'] } },
-  { username: 'fredrik', password: 'demo', user: { name: 'Fredrik Sandberg', role: 'member', email: 'fredrik.sandberg@example.com', group: 'HR / Personalfrågor', groups: ['HR / Personalfrågor'] } },
-  { username: 'admin', password: 'adminadmin', user: { name: 'Andreas', role: 'admin', email: 'admin@example.com' } },
-];
+const THIRD_PROTECTED_DEPARTMENT_RECORD = {
+  name: 'Lagret',
+  description: DEPARTMENT_DESCRIPTIONS['Lagret'],
+};
 
 const schemaPath = path.join(__dirname, 'schema.sql');
 if (fs.existsSync(schemaPath)) {
   db.exec(fs.readFileSync(schemaPath, 'utf8'));
-}
-
-const insertDefaultUser = db.prepare(
-  'INSERT OR IGNORE INTO users (username, password_hash, name, role, email) VALUES (?, ?, ?, ?, ?)'
-);
-const insertDefaultUserGroup = db.prepare(
-  'INSERT OR IGNORE INTO user_groups (username, group_name) VALUES (?, ?)'
-);
-for (const entry of DEFAULT_USERS) {
-  const hash = bcrypt.hashSync(entry.password, 10);
-  insertDefaultUser.run(entry.username, hash, entry.user.name, entry.user.role, entry.user.email);
-  normalizeUserGroups(entry.user).forEach((group) => {
-    insertDefaultUserGroup.run(entry.username, group);
-  });
 }
 
 const DEMO_ORDERS = [
@@ -248,6 +222,49 @@ function normalizeAmbCentralRole(role, email = '', adminEmails = ENV_BPORTAL_ADM
   return 'member';
 }
 
+function seedDemoUsers() {
+  const demoUsers = [
+    { username: 'user', password: 'user', user: { name: 'Anders Jansson', role: 'member', email: 'personal@example.com' } },
+    { username: 'lena', password: 'demo', user: { name: 'Lena Karlsson', role: 'member', email: 'lena.karlsson@example.com' } },
+    { username: 'mats', password: 'demo', user: { name: 'Mats Nilsson', role: 'member', email: 'mats.nilsson@example.com' } },
+    { username: 'sara', password: 'demo', user: { name: 'Sara Lindberg', role: 'member', email: 'sara.lindberg@example.com' } },
+    { username: 'erik', password: 'demo', user: { name: 'Erik Svensson', role: 'member', email: 'erik.svensson@example.com' } },
+    { username: 'maria', password: 'demo', user: { name: 'Maria Ek', role: 'member', email: 'maria.ek@example.com' } },
+    { username: 'oskar', password: 'demo', user: { name: 'Oskar Lund', role: 'member', email: 'oskar.lund@example.com' } },
+    { username: 'elin', password: 'demo', user: { name: 'Elin Holm', role: 'member', email: 'elin.holm@example.com' } },
+    { username: 'per', password: 'demo', user: { name: 'Per Gustafsson', role: 'member', email: 'per.gustafsson@example.com' } },
+    { username: 'user2', password: 'user2', user: { name: 'Anna Olsson', role: 'member', email: 'grafikgruppen@example.com' } },
+    { username: 'zoom', password: 'demo', user: { name: 'Zoomansvarig', role: 'member', email: 'zoom@example.com' } },
+    { username: 'sofia', password: 'demo', user: { name: 'Sofia Bergström', role: 'member', email: 'sofia.bergstrom@example.com' } },
+    { username: 'johan', password: 'demo', user: { name: 'Johan Eriksson', role: 'member', email: 'johan.eriksson@example.com' } },
+    { username: 'emma', password: 'demo', user: { name: 'Emma Persson', role: 'member', email: 'emma.persson@example.com' } },
+    { username: 'niklas', password: 'demo', user: { name: 'Niklas Åberg', role: 'member', email: 'niklas.aberg@example.com' } },
+    { username: 'camilla', password: 'demo', user: { name: 'Camilla Larsson', role: 'member', email: 'camilla.larsson@example.com' } },
+    { username: 'fredrik', password: 'demo', user: { name: 'Fredrik Sandberg', role: 'member', email: 'fredrik.sandberg@example.com' } },
+    { username: 'admin', password: 'adminadmin', user: { name: 'Andreas', role: 'admin', email: 'admin@example.com' } },
+  ];
+  const count = db.transaction(() => {
+    let created = 0;
+    for (const entry of demoUsers) {
+      const existing = db.prepare('SELECT username FROM users WHERE username = ?').get(entry.username);
+      if (!existing) {
+        const hash = bcrypt.hashSync(entry.password, 10);
+        db.prepare(
+          'INSERT INTO users (username, password_hash, name, role, email) VALUES (?, ?, ?, ?, ?)'
+        ).run(entry.username, hash, entry.user.name, entry.user.role, entry.user.email);
+        created++;
+      }
+      normalizeUserGroups(entry.user).forEach((group) => {
+        db.prepare(
+          'INSERT OR IGNORE INTO user_groups (username, group_name) VALUES (?, ?)'
+        ).run(entry.username, group);
+      });
+    }
+    return created;
+  })();
+  return count;
+}
+
 function normalizeUserGroups(user = {}) {
   const source = user && typeof user === 'object' ? user : {};
   const values = [
@@ -296,7 +313,7 @@ function normalizeUserEntry(entry) {
 }
 
 function normalizeUsers(users) {
-  const source = Array.isArray(users) ? users : DEFAULT_USERS;
+  const source = Array.isArray(users) ? users : [];
   const normalized = [];
   const seenUsernames = new Set();
   const seenEmails = new Set();
@@ -314,11 +331,7 @@ function normalizeUsers(users) {
     seenEmails.add(emailKey);
   });
 
-  return normalized.length ? normalized : DEFAULT_USERS.map((entry) => ({
-    username: entry.username,
-    password: entry.password,
-    user: { ...entry.user },
-  }));
+  return normalized;
 }
 
 function publicUserEntry(entry) {
@@ -453,6 +466,12 @@ function deleteUserFromDb(username) {
   db.prepare('DELETE FROM users WHERE username = ?').run(username);
 }
 
+function resetUsersDbForTests() {
+  if (process.env.NODE_ENV !== 'test') return;
+  db.prepare('DELETE FROM user_groups').run();
+  db.prepare('DELETE FROM users').run();
+}
+
 function defaultUserSettings(user = {}) {
   const isGroupUser = normalizeUserGroups(user).length > 0;
   return {
@@ -542,7 +561,9 @@ function normalizeDepartmentRecords(records) {
     if (seen.has(protectedDepartmentName.toLowerCase())) continue;
     const protectedRecord = protectedDepartmentName === 'Grafikgruppen'
       ? PROTECTED_DEPARTMENT_RECORD
-      : SECOND_PROTECTED_DEPARTMENT_RECORD;
+      : protectedDepartmentName === 'Boka zoom-möte'
+        ? SECOND_PROTECTED_DEPARTMENT_RECORD
+        : THIRD_PROTECTED_DEPARTMENT_RECORD;
     normalized.push({ ...protectedRecord });
     seen.add(protectedDepartmentName.toLowerCase());
   }
@@ -969,6 +990,15 @@ function validateOrder(payload, state) {
       if (!/^\d{2}:\d{2}$/.test(String(meeting.time || ''))) details.push('zoom_meeting_time_invalid');
     }
   }
+  if (department === 'Lagret') {
+    const request = payload.articleRequest;
+    if (!request || typeof request !== 'object') {
+      details.push('article_request_required');
+    } else {
+      if (!String(request.articleName || '').trim()) details.push('article_name_required');
+      if (!String(request.quantity || '').trim()) details.push('article_quantity_required');
+    }
+  }
   if (Array.isArray(payload.attachments) && payload.attachments.length > MAX_ATTACHMENTS) {
     details.push('attachments_too_many');
   }
@@ -1033,6 +1063,18 @@ function safeZoomMeetingRequest(payload) {
   };
 }
 
+function safeArticleRequest(payload) {
+  if (!payload || typeof payload.articleRequest !== 'object' || payload.articleRequest === null) return null;
+  const request = payload.articleRequest;
+
+  return {
+    articleName: String(request.articleName || '').trim().slice(0, 200),
+    quantity: String(request.quantity || '').trim().slice(0, 50),
+    unit: String(request.unit || '').trim().slice(0, 50),
+    notes: String(request.notes || '').trim().slice(0, 2000),
+  };
+}
+
 function findUserEntryByEmail(state, email, adminEmails = ENV_BPORTAL_ADMIN_EMAILS) {
   const entry = findUserEntryInDbByEmail(email, state, adminEmails);
   if (entry) return entry;
@@ -1057,6 +1099,7 @@ function safeOrder(payload, state, requestUser = null) {
     attachments: safeAttachments(payload),
     graphicsRequest: safeGraphicsRequest(payload),
     zoomMeetingRequest: safeZoomMeetingRequest(payload),
+    articleRequest: safeArticleRequest(payload),
     proposals: [],
   };
 }
@@ -2225,6 +2268,18 @@ function createApp(options = {}) {
       });
     }
 
+    if (method === 'POST' && url.pathname === '/api/admin/seed-demo-users') {
+      if (!requestUser || requestUser.role !== 'admin') return json(403, { error: 'admin_required' });
+
+      const created = seedDemoUsers();
+
+      const users = listUserEntriesFromDb(state, adminEmails);
+      state.users = users.map((entry) => ({ username: entry.username, password: entry.password, user: entry.user }));
+      if (persist) saveState(state, dataFile);
+
+      return json(200, { created, users: users.map(publicUserEntry) });
+    }
+
     if (method === 'POST' && url.pathname === '/api/admin/sync-staff') {
       if (!requestUser || requestUser.role !== 'admin') return json(403, { error: 'admin_required' });
 
@@ -2694,4 +2749,6 @@ module.exports = {
   DEFAULT_DEPARTMENT_RECORDS,
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_SIZE,
+  seedDemoUsers,
+  resetUsersDbForTests,
 };

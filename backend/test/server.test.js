@@ -8,6 +8,8 @@ const {
   warmOllamaModel,
   startOllamaWarmupLoop,
   abortOllamaWarmup,
+  seedDemoUsers,
+  resetUsersDbForTests,
 } = require('../server');
 
 async function request(app, method, path, body, headers = {}) {
@@ -28,7 +30,9 @@ async function request(app, method, path, body, headers = {}) {
   };
 }
 
-function freshApp() {
+function freshApp(options = {}) {
+  if (options.resetDb !== false) resetUsersDbForTests();
+  seedDemoUsers();
   return createApp({ state: createDefaultState() });
 }
 
@@ -160,6 +164,10 @@ test('PUT /api/departments updates departments used by orders', async () => {
     {
       name: 'Boka zoom-möte',
       description: 'Bokning och planering av digitala möten i Zoom.',
+    },
+    {
+      name: 'Lagret',
+      description: 'Beställning av profilartiklar, kontorsmaterial, broschyrer och övriga fysiska artiklar från lagret.',
     },
   ]);
 
@@ -532,16 +540,20 @@ test('POST /api/login forwards AmbCentral login errors', async () => {
   });
 });
 
-test('default demo users cover every department with at least one person', async () => {
+test('default demo users are not pre-assigned to any department', async () => {
   const app = freshApp();
   const response = await request(app, 'GET', '/api/users');
 
   assert.equal(response.statusCode, 200);
-  for (const department of DEPARTMENTS) {
+  // Only check the built-in DEFAULT_USERS (not users created by other tests)
+  const defaultUsernames = new Set(['user', 'lena', 'mats', 'sara', 'erik', 'maria', 'oskar', 'elin', 'per', 'user2', 'zoom', 'sofia', 'johan', 'emma', 'niklas', 'camilla', 'fredrik', 'admin']);
+  for (const user of response.body.users) {
+    if (!defaultUsernames.has(user.username)) continue;
+    if (user.username === 'admin') continue;
     assert.equal(
-      response.body.users.some((user) => Array.isArray(user.groups) && user.groups.includes(department)),
-      true,
-      `missing demo user for ${department}`,
+      Array.isArray(user.groups) && user.groups.length > 0,
+      false,
+      `${user.username} should not have pre-assigned groups`,
     );
   }
 });
@@ -619,7 +631,7 @@ test('GET /api/users lists users persisted in sqlite even when they are not in s
       groups: ['Hemsidan'],
     });
 
-    const reloadedApp = freshApp();
+    const reloadedApp = freshApp({ resetDb: false });
     const response = await request(reloadedApp, 'GET', '/api/users');
 
     assert.equal(response.statusCode, 200);
@@ -840,8 +852,19 @@ test('POST and GET /api/orders/:id/chat are limited to the order owner and depar
   assert.equal(ownerWrite.statusCode, 201);
   assert.equal(ownerWrite.body.message.text, 'Hej, jag vill gärna följa upp beställningen.');
 
+  // Skapa en användare kopplad till Grafikgruppen för att testa gruppåtkomst
+  const createdUser = await request(app, 'POST', '/api/users', {
+    username: 'grafiker',
+    password: 'secret',
+    name: 'Grafiker',
+    role: 'member',
+    email: 'grafiker@example.com',
+    groups: ['Grafikgruppen'],
+  });
+  assert.equal(createdUser.statusCode, 201, `user creation failed: ${JSON.stringify(createdUser.body)}`);
+
   const memberRead = await request(app, 'GET', `/api/orders/${created.body.order.id}/chat`, undefined, {
-    'x-bportal-user-email': 'grafikgruppen@example.com',
+    'x-bportal-user-email': 'grafiker@example.com',
   });
   assert.equal(memberRead.statusCode, 200);
   assert.equal(memberRead.body.chat.length, 1);
@@ -849,7 +872,7 @@ test('POST and GET /api/orders/:id/chat are limited to the order owner and depar
   const memberWrite = await request(app, 'POST', `/api/orders/${created.body.order.id}/chat`, {
     message: 'Vi har tagit hand om den.',
   }, {
-    'x-bportal-user-email': 'grafikgruppen@example.com',
+    'x-bportal-user-email': 'grafiker@example.com',
   });
   assert.equal(memberWrite.statusCode, 201);
   assert.equal(memberWrite.body.message.text, 'Vi har tagit hand om den.');
@@ -1639,4 +1662,84 @@ test('POST /api/ai/suggest returns no suggestion if Ollama fails', async () => {
   assert.equal(response.body.suggestion, null);
   assert.equal(response.body.reply, undefined);
   assert.equal(response.body.error, 'ollama unavailable');
+});
+
+test('DEPARTMENTS includes Lagret', () => {
+  assert.equal(DEPARTMENTS.includes('Lagret'), true);
+});
+
+test('PUT /api/departments keeps Lagret even if it is omitted', async () => {
+  const app = freshApp();
+  const updated = await request(app, 'PUT', '/api/departments', {
+    departments: [
+      { name: 'Chefens avdelning' },
+    ],
+  }, {
+    'x-bportal-user-email': 'admin@example.com',
+  });
+
+  assert.equal(updated.statusCode, 200);
+  assert.equal(updated.body.departments.some((department) => (
+    department.name === 'Lagret'
+    && department.email === undefined
+    && department.description.includes('artiklar')
+  )), true);
+});
+
+test('POST /api/orders stores structured article request fields for Lagret', async () => {
+  const app = freshApp();
+  const created = await request(app, 'POST', '/api/orders', {
+    from: 'Personal',
+    msg: 'Beställning från lagret.',
+    deadline: '2026-06-10',
+    dept: 'Lagret',
+    articleRequest: {
+      articleName: 'Profilpennor',
+      quantity: '50',
+      unit: 'st',
+      notes: 'Blå färg med partilogga.',
+    },
+  });
+
+  assert.equal(created.statusCode, 201);
+  assert.deepEqual(created.body.order.articleRequest, {
+    articleName: 'Profilpennor',
+    quantity: '50',
+    unit: 'st',
+    notes: 'Blå färg med partilogga.',
+  });
+});
+
+test('POST /api/orders rejects Lagret order without article name', async () => {
+  const app = freshApp();
+  const response = await request(app, 'POST', '/api/orders', {
+    from: 'Personal',
+    msg: 'Beställning från lagret.',
+    deadline: '2026-06-10',
+    dept: 'Lagret',
+    articleRequest: {
+      quantity: '10',
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, 'invalid_order');
+  assert.deepEqual(response.body.details, ['article_name_required']);
+});
+
+test('POST /api/orders rejects Lagret order without quantity', async () => {
+  const app = freshApp();
+  const response = await request(app, 'POST', '/api/orders', {
+    from: 'Personal',
+    msg: 'Beställning från lagret.',
+    deadline: '2026-06-10',
+    dept: 'Lagret',
+    articleRequest: {
+      articleName: 'Profilpennor',
+    },
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.body.error, 'invalid_order');
+  assert.deepEqual(response.body.details, ['article_quantity_required']);
 });

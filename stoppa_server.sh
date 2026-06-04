@@ -20,7 +20,11 @@ if [ -z "$PID" ]; then
     echo "Ingen backend-server hittades som körs."
 else
     echo "Stänger av backend-server (PID: $PID)..."
-    kill "$PID"
-    rm -f "$PID_FILE"
-    echo "Backend-server avstängd."
+    if kill "$PID"; then
+        rm -f "$PID_FILE"
+        echo "Backend-server avstängd."
+    else
+        echo "Kunde inte stänga av backend-servern (PID: $PID). Kontrollera ägare/behörighet."
+        exit 1
+    fi
 fi

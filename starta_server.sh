@@ -15,15 +15,22 @@ fi
 echo "Checking backend native modules for current Node..."
 NODE_VERSION="$(node -p "process.version")"
 NODE_ABI="$(node -p "process.versions.modules")"
-if ! (cd "$ROOT_DIR/backend" && node -e "require('better-sqlite3')" >/dev/null 2>&1); then
+NODE_BINARY="$(command -v node)"
+check_better_sqlite3() {
+  (cd "$ROOT_DIR/backend" && node -e "const Database = require('better-sqlite3'); const db = new Database(':memory:'); db.close();" >/dev/null 2>&1)
+}
+
+if ! check_better_sqlite3; then
   echo "Rebuilding better-sqlite3 for Node ${NODE_VERSION} (ABI ${NODE_ABI})..."
+  echo "Using node: ${NODE_BINARY}"
   npm rebuild --prefix backend better-sqlite3 || {
     echo "Failed to rebuild better-sqlite3. See npm output above."
     exit 1
   }
 
-  if ! (cd "$ROOT_DIR/backend" && node -e "require('better-sqlite3')" >/dev/null 2>&1); then
+  if ! check_better_sqlite3; then
     echo "better-sqlite3 still cannot load after rebuild."
+    (cd "$ROOT_DIR/backend" && node -e "const Database = require('better-sqlite3'); const db = new Database(':memory:'); db.close();")
     exit 1
   fi
 fi
