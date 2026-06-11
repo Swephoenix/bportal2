@@ -7,7 +7,7 @@
     <link rel="icon" href="assets/b-logo.svg" type="image/svg+xml">
     <link href="assets/tailwind.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.0/css/all.min.css" rel="stylesheet">
-    <script src="/config.js"></script>
+    <script src="config.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Arsenal:wght@400;700&display=swap');
         body { font-family: 'Arsenal', sans-serif; background-color: #f3f4f6; overflow-x: hidden; }
@@ -1903,6 +1903,16 @@
                         <p class="mt-2 text-xs text-gray-500">Antal token i modellens kontextfönster. Högre = mer minne men långsammare.</p>
                     </div>
                     <div>
+                        <label class="mb-1 block text-sm font-semibold text-gray-700">AI-assistent</label>
+                        <div class="flex items-center gap-3">
+                            <button id="ai-enabled-toggle" type="button" role="switch" onclick="toggleAiEnabled()" class="relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 bg-gray-200" aria-checked="false">
+                                <span id="ai-enabled-thumb" class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0"></span>
+                            </button>
+                            <span id="ai-enabled-label" class="text-sm text-gray-500">Avstängd</span>
+                        </div>
+                        <p class="mt-2 text-xs text-gray-500">Aktivera AI-assistenten för att hjälpa användare hitta rätt avdelning.</p>
+                    </div>
+                    <div>
                         <label class="mb-1 block text-sm font-semibold text-gray-700">Modell uppvärmd</label>
                         <div class="flex items-center gap-3">
                             <button id="ai-warmup-toggle" type="button" role="switch" onclick="toggleAiWarmup()" class="relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 bg-gray-200" aria-checked="false">
@@ -2431,6 +2441,7 @@
             selectedTime: '10:00',
         };
         let departmentPageMode = "order";
+        let isAiEnabled = false;
         let aiChatHistory = [];
         let aiThinkingRow = null;
         let aiStreamingAssistant = null;
@@ -6088,7 +6099,17 @@
             overlay.classList.add('is-open');
 
             const input = document.getElementById('ai-chat-input');
-            if (input) input.focus();
+            const submitBtn = document.querySelector('.as-ai-form button[type="submit"]');
+            const suggestions = document.querySelector('.as-ai-suggestions');
+            if (!isAiEnabled) {
+                if (input) input.disabled = true;
+                if (submitBtn) submitBtn.disabled = true;
+                if (suggestions) suggestions.style.display = 'none';
+            } else {
+                if (input) { input.disabled = false; input.focus(); }
+                if (submitBtn) submitBtn.disabled = false;
+                if (suggestions) suggestions.style.display = '';
+            }
         }
 
         function closeAIChatPopup() {
@@ -6103,6 +6124,18 @@
         function ensureAIChatGreeting() {
             const log = document.getElementById('ai-chat-log');
             if (!log || log.children.length > 0) return;
+
+            if (!isAiEnabled) {
+                log.innerHTML = `
+                    <div class="flex gap-3 fade-in">
+                        <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-100">🤖</div>
+                        <div class="max-w-[85%] rounded-2xl rounded-tl-none bg-amber-50 p-4 text-sm text-amber-700 shadow-sm">
+                            AI-assistenten är avstängd. Kontakta en administratör för att aktivera AI-hjälpen.
+                        </div>
+                    </div>
+                `;
+                return;
+            }
 
             log.innerHTML = `
                 <div class="flex gap-3 fade-in">
@@ -6202,6 +6235,11 @@
                     badgeClass: 'border-rose-200 bg-rose-50 text-rose-700',
                     dotClass: 'bg-rose-500',
                 },
+                disabled: {
+                    text: 'AI avstängd',
+                    badgeClass: 'border-slate-200 bg-slate-100 text-slate-500',
+                    dotClass: 'bg-slate-400',
+                },
             }[status] || {
                 text: 'AI okänd',
                 badgeClass: 'border-slate-200 bg-slate-50 text-slate-500',
@@ -6213,6 +6251,10 @@
         }
 
         async function refreshAIStatusBadge() {
+            if (!isAiEnabled) {
+                setAIStatusBadge('disabled');
+                return;
+            }
             setAIStatusBadge('checking');
             try {
                 const result = await apiRequest('/api/ai/status');
@@ -6249,6 +6291,8 @@
 
                 document.getElementById('ai-num-ctx').value = config.numCtx || '';
 
+                isAiEnabled = config.enabled;
+                setAiEnabledUI(config.enabled);
                 setAiWarmupUI(config.warmup);
 
                 const listContent = document.getElementById('ai-model-list-content');
@@ -6265,6 +6309,37 @@
                 document.getElementById('ai-config-status').textContent = 'Fel vid laddning';
                 document.getElementById('ai-config-status').className = 'text-sm font-medium text-red-500';
             }
+        }
+
+        function setAiEnabledUI(enabled) {
+            const toggle = document.getElementById('ai-enabled-toggle');
+            const thumb = document.getElementById('ai-enabled-thumb');
+            const label = document.getElementById('ai-enabled-label');
+            const warmupToggle = document.getElementById('ai-warmup-toggle');
+            if (enabled) {
+                toggle.className = 'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 bg-blue-600';
+                toggle.setAttribute('aria-checked', 'true');
+                thumb.className = 'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-5';
+                label.textContent = 'Påslagen';
+                label.className = 'text-sm text-emerald-600 font-semibold';
+                if (warmupToggle) warmupToggle.disabled = false;
+            } else {
+                toggle.className = 'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 bg-gray-200';
+                toggle.setAttribute('aria-checked', 'false');
+                thumb.className = 'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0';
+                label.textContent = 'Avstängd';
+                label.className = 'text-sm text-gray-500';
+                if (warmupToggle) {
+                    warmupToggle.disabled = true;
+                    setAiWarmupUI(false);
+                }
+            }
+        }
+
+        function toggleAiEnabled() {
+            const toggle = document.getElementById('ai-enabled-toggle');
+            const isEnabled = toggle.getAttribute('aria-checked') === 'true';
+            setAiEnabledUI(!isEnabled);
         }
 
         function setAiWarmupUI(enabled) {
@@ -6297,6 +6372,27 @@
             const model = select.value;
             const numCtx = parseInt(document.getElementById('ai-num-ctx').value, 10);
             const warmup = document.getElementById('ai-warmup-toggle').getAttribute('aria-checked') === 'true';
+            const enabled = document.getElementById('ai-enabled-toggle').getAttribute('aria-checked') === 'true';
+
+            if (!enabled) {
+                const payload = { enabled };
+                document.getElementById('ai-config-status').textContent = 'Sparar...';
+                document.getElementById('ai-config-status').className = 'text-sm font-medium text-gray-500';
+                try {
+                    const result = await apiRequest('/api/ai/config', {
+                        method: 'PUT',
+                        body: JSON.stringify(payload),
+                    });
+                    isAiEnabled = false;
+                    document.getElementById('ai-config-status').textContent = 'AI är avstängd.';
+                    document.getElementById('ai-config-status').className = 'text-sm font-medium text-amber-600';
+                    refreshAIStatusBadge();
+                } catch (error) {
+                    document.getElementById('ai-config-status').textContent = 'Misslyckades att spara.';
+                    document.getElementById('ai-config-status').className = 'text-sm font-medium text-red-500';
+                }
+                return;
+            }
 
             if (!model) {
                 document.getElementById('ai-config-status').textContent = 'Välj en modell.';
@@ -6304,7 +6400,7 @@
                 return;
             }
 
-            const payload = { model };
+            const payload = { model, enabled };
             if (!isNaN(numCtx) && numCtx > 0) payload.numCtx = numCtx;
             payload.warmup = warmup;
 
@@ -6317,6 +6413,7 @@
                     body: JSON.stringify(payload),
                 });
 
+                isAiEnabled = true;
                 document.getElementById('ai-config-status').textContent = 'Inställningar sparade!';
                 document.getElementById('ai-config-status').className = 'text-sm font-medium text-emerald-600';
                 refreshAIStatusBadge();
@@ -6711,6 +6808,10 @@
 
         function sendAIQuickPrompt(text) {
             openAIChatPopup();
+            if (!isAiEnabled) {
+                addAIChatMessage('assistant', 'AI-assistenten är avstängd. Kontakta en administratör för att aktivera den.');
+                return;
+            }
             document.getElementById('ai-chat-input').value = text;
             sendAIMessage();
         }
@@ -6723,6 +6824,11 @@
 
         async function sendAIMessage(event) {
             if (event) event.preventDefault();
+
+            if (!isAiEnabled) {
+                addAIChatMessage('assistant', 'AI-assistenten är avstängd. Kontakta en administratör för att aktivera den.');
+                return;
+            }
 
             const input = document.getElementById('ai-chat-input');
             const text = input.value.trim();

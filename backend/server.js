@@ -158,6 +158,7 @@ function createDefaultState() {
       numCtx: OLLAMA_NUM_CTX,
       numPredict: OLLAMA_NUM_PREDICT,
       warmup: false,
+      enabled: process.env.NODE_ENV === 'test',
     },
     smtpConfig: {
       host: process.env.SMTP_HOST || '',
@@ -241,7 +242,6 @@ function seedDemoUsers() {
     { username: 'niklas', password: 'demo', user: { name: 'Niklas Åberg', role: 'member', email: 'niklas.aberg@example.com' } },
     { username: 'camilla', password: 'demo', user: { name: 'Camilla Larsson', role: 'member', email: 'camilla.larsson@example.com' } },
     { username: 'fredrik', password: 'demo', user: { name: 'Fredrik Sandberg', role: 'member', email: 'fredrik.sandberg@example.com' } },
-    { username: 'admin', password: 'adminadmin', user: { name: 'Andreas', role: 'admin', email: 'admin@example.com' } },
   ];
   const count = db.transaction(() => {
     let created = 0;
@@ -644,6 +644,7 @@ function getAiConfig(state) {
     numCtx: (cfg && cfg.numCtx) || OLLAMA_NUM_CTX,
     numPredict: (cfg && cfg.numPredict) || OLLAMA_NUM_PREDICT,
     warmup: cfg && typeof cfg.warmup === 'boolean' ? cfg.warmup : false,
+    enabled: cfg && typeof cfg.enabled === 'boolean' ? cfg.enabled : false,
   };
 }
 
@@ -2117,7 +2118,13 @@ function createApp(options = {}) {
         numCtx: typeof payload.numCtx === 'number' ? payload.numCtx : current.numCtx,
         numPredict: typeof payload.numPredict === 'number' ? payload.numPredict : current.numPredict,
         warmup: typeof payload.warmup === 'boolean' ? payload.warmup : current.warmup,
+        enabled: typeof payload.enabled === 'boolean' ? payload.enabled : current.enabled,
       };
+
+      if (!updated.enabled) {
+        if (current.warmup) stopOllamaWarmupLoop();
+        updated.warmup = false;
+      }
 
       if (updated.warmup && !current.warmup) {
         startOllamaWarmupLoop({
@@ -2492,12 +2499,15 @@ function createApp(options = {}) {
       const payload = parseBody(body);
       if (!payload) return json(400, { error: 'invalid_json' });
 
+      const config = getAiConfig(state);
+      if (!config.enabled) {
+        return json(403, { error: 'ai_disabled', message: 'AI-assistenten är avstängd.' });
+      }
+
       const messages = normalizeAiMessages(payload);
       if (messages.length === 0) {
         return json(400, { error: 'message_required' });
       }
-
-      const config = getAiConfig(state);
 
       if (payload.stream) {
         return getAiDepartmentSuggestionStream(messages, {

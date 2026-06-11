@@ -1,0 +1,63 @@
+services:
+  bportal:
+    build: .
+    container_name: bportal
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - HOST=0.0.0.0
+      - BPORTAL_DATA_FILE=/app/backend/data/orders.json
+      - BPORTAL_DB_FILE=/app/backend/data/bportal.db
+      - BPORTAL_ADMIN_EMAILS=${BPORTAL_ADMIN_EMAILS:-admin@example.com}
+      - BPORTAL_API_BASE_URL=${BPORTAL_API_BASE_URL:-/demo}
+      - AMBCENTRAL_API_URL=${AMBCENTRAL_API_URL:-}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-granite4.1:3b}
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-7500}
+      - OLLAMA_NUM_PREDICT=${OLLAMA_NUM_PREDICT:-120}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
+      - OLLAMA_WARMUP=${OLLAMA_WARMUP:-0}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      - NODE_ENV=production
+    volumes:
+      - bportal_data:/app/backend/data
+    networks:
+      - bportal_net
+      - nginx_default
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: bportal-ollama
+    restart: unless-stopped
+    profiles:
+      - ai
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_KEEP_ALIVE=-1
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "sh", "-c", "ollama list 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - bportal_net
+
+volumes:
+  bportal_data:
+  ollama_data:
+
+networks:
+  bportal_net:
+    driver: bridge
+  nginx_default:
+    external: true
